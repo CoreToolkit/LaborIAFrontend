@@ -29,7 +29,7 @@ export default function Callback() {
       })
     })
       .then(res => res.json())
-      .then(data => {
+      .then(data => { 
         localStorage.setItem("access_token", data.access_token)
         localStorage.setItem("refresh_token", data.refresh_token)
 
