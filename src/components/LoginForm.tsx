@@ -9,6 +9,7 @@ export const LoginForm = () => {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -16,9 +17,24 @@ export const LoginForm = () => {
     router.push('/dashboard');
   };
 
-  const handleGoogleLogin = () => {
-    // Implementación futura de Google OAuth
-    router.push('/dashboard');
+  const handleGoogleLogin = async () => {
+    try {
+      if (!apiUrl) {
+        throw new Error('apiUrl no está definida. Reinicia el servidor con: npm run dev');
+      }
+      
+      const res = await fetch(apiUrl);
+      
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
+      }
+      
+      const data = await res.json();
+      window.location.href = data.url;
+    } catch (error) {
+      console.error('Error al conectar con el servidor:', error);
+      alert('Error: ' + (error as Error).message);
+    }
   };
 
   const handleMicrosoftLogin = () => {
