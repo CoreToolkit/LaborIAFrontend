@@ -1,8 +1,19 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import Head from 'next/head';
+import { useRouter } from 'next/router';
 import { LoginForm } from '@/components/LoginForm';
+import { useSession } from '@/hooks/useSession';
 
 export default function Login() {
+  const router = useRouter();
+  const { isAuthenticated, isLoading } = useSession();
+
+  useEffect(() => {
+    if (!isLoading && isAuthenticated) {
+      router.replace("/dashboard");
+    }
+  }, [isAuthenticated, isLoading, router]);
+
   return (
     <>
       <Head>
