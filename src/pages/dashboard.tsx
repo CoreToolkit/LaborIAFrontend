@@ -8,12 +8,39 @@ import {
   Bell,
   Settings
 } from 'lucide-react';
+import { clearTokens, clearProvider, getAccessToken } from '@/utils/session';
 
 export default function Dashboard() {
   const router = useRouter();
 
-  const handleLogout = () => {
-    router.push('/login');
+  const handleLogout = async () => {
+    const accessToken = getAccessToken();
+
+    try {
+      if (!accessToken) {
+        clearTokens();
+        clearProvider();
+        router.push('/login');
+        return;
+      }
+
+      const res = await fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      if (!res.ok) {
+        console.error('Logout respondió con error HTTP:', res.status);
+      }
+    } catch (error) {
+      console.error('Error al cerrar sesión:', error);
+    } finally {
+      clearTokens();
+      clearProvider();
+      router.push('/login');
+    }
   };
 
   return (
