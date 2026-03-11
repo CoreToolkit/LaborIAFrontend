@@ -45,7 +45,7 @@ export default function Dashboard() {
   };
 
   return (
-    <PrivateRoute>
+    //<PrivateRoute>
       <>
         <Head>
           <title>Dashboard - LaborIA</title>
@@ -183,6 +183,6 @@ export default function Dashboard() {
           </main>
         </div>
       </>
-    </PrivateRoute>
+    //</PrivateRoute>
   );
 }
