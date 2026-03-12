@@ -4,7 +4,7 @@ import { useRouter } from "next/router";
 import { 
   User, Mail, Globe, LogOut, RefreshCw, AlertCircle, Briefcase, 
   Award, Target, TrendingUp, Settings, Linkedin, Github, Twitter,
-  Calendar, MapPin, Building, Plus, Edit2, Trash2, Star, Trophy
+  Calendar, MapPin, Building, Plus, Edit2, Trash2, Star, Trophy, BookOpen
 } from "lucide-react";
 import { useProfile } from "@/hooks/useProfile";
 import { useSession } from "@/hooks/useSession";
@@ -362,6 +362,16 @@ export default function ProfilePage() {
                   {/* Personal Information Tab */}
                   {activeTab === 'info' && (
                     <div className="space-y-6">
+                      <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-lg font-semibold text-gray-900">Información Personal</h3>
+                        <button
+                          onClick={() => setIsPersonalInfoModalOpen(true)}
+                          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                          Editar
+                        </button>
+                      </div>
                       <div className="grid grid-cols-2 gap-6">
                         <div className="flex items-start gap-3">
                           <Mail className="w-5 h-5 text-gray-400 mt-0.5" />
@@ -398,7 +408,61 @@ export default function ProfilePage() {
                             </div>
                           </div>
                         )}
+
+                        {profile.carrera && (
+                          <div className="flex items-start gap-3">
+                            <Briefcase className="w-5 h-5 text-gray-400 mt-0.5" />
+                            <div>
+                              <p className="text-sm text-gray-500 font-medium">Carrera</p>
+                              <p className="text-gray-900">{profile.carrera}</p>
+                            </div>
+                          </div>
+                        )}
+
+                        {profile.universidad && (
+                          <div className="flex items-start gap-3">
+                            <BookOpen className="w-5 h-5 text-gray-400 mt-0.5" />
+                            <div>
+                              <p className="text-sm text-gray-500 font-medium">Universidad</p>
+                              <p className="text-gray-900">{profile.universidad}</p>
+                            </div>
+                          </div>
+                        )}
+
+                        {profile.fechaGraduacion && (
+                          <div className="flex items-start gap-3">
+                            <Calendar className="w-5 h-5 text-gray-400 mt-0.5" />
+                            <div>
+                              <p className="text-sm text-gray-500 font-medium">Fecha de Graduación</p>
+                              <p className="text-gray-900">
+                                {new Date(profile.fechaGraduacion).toLocaleDateString('es-CO', {
+                                  year: 'numeric',
+                                  month: 'long',
+                                  day: 'numeric'
+                                })}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
+                        {profile.nivelIngles && (
+                          <div className="flex items-start gap-3">
+                            <Globe className="w-5 h-5 text-gray-400 mt-0.5" />
+                            <div>
+                              <p className="text-sm text-gray-500 font-medium">Nivel de Inglés</p>
+                              <p className="text-gray-900">{profile.nivelIngles}</p>
+                            </div>
+                          </div>
+                        )}
                       </div>
+
+                      {/* Bio / Description */}
+                      {profile.bio && (
+                        <div className="pt-6 border-t border-gray-200">
+                          <h4 className="text-sm font-semibold text-gray-900 mb-2">Descripción</h4>
+                          <p className="text-gray-700">{profile.bio}</p>
+                        </div>
+                      )}
 
                       {/* Social Links */}
                       {profile.redesSociales && (
@@ -808,6 +872,11 @@ export default function ProfilePage() {
                 email: profile.email,
                 telefono: profile.telefono,
                 ubicacion: profile.ubicacion,
+                carrera: profile.carrera,
+                universidad: profile.universidad,
+                fechaGraduacion: profile.fechaGraduacion,
+                bio: profile.bio,
+                nivelIngles: profile.nivelIngles,
               }}
               onSave={handleSavePersonalInfo}
             />
@@ -828,11 +897,18 @@ export default function ProfilePage() {
               mode={skillMode}
             />
             
-            {profile.preferencias && (
+            {(
               <PreferencesModal
                 isOpen={isPreferencesModalOpen}
                 onClose={() => setIsPreferencesModalOpen(false)}
-                initialData={profile.preferencias}
+                initialData={profile.preferencias || {
+                  cargo: '',
+                  industria: '',
+                  ubicacion: '',
+                  salarioEsperado: 0,
+                  tipoContrato: '',
+                  disponibilidadInmediata: false,
+                }}
                 onSave={handleSavePreferences}
               />
             )}
