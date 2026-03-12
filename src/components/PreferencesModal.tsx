@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,9 +18,26 @@ export function PreferencesModal({
   initialData,
   onSave,
 }: PreferencesModalProps) {
-  const [formData, setFormData] = useState<Preferencias>(initialData);
+  const defaultPreferences: Preferencias = {
+    cargo: '',
+    industria: '',
+    ubicacion: '',
+    salarioEsperado: 0,
+    tipoContrato: '',
+    disponibilidadInmediata: false,
+  };
+
+  const [formData, setFormData] = useState<Preferencias>(initialData || defaultPreferences);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Sincronizar formData cuando initialData o isOpen cambien
+  useEffect(() => {
+    if (isOpen) {
+      setFormData(initialData || defaultPreferences);
+      setError(null);
+    }
+  }, [isOpen, initialData]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,10 +45,14 @@ export function PreferencesModal({
     setError(null);
 
     try {
+      console.log('Guardando preferencias:', formData);
       await onSave(formData);
+      console.log('Preferencias guardadas exitosamente');
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al guardar');
+      const errorMessage = err instanceof Error ? err.message : 'Error al guardar las preferencias';
+      console.error('Error al guardar preferencias:', err);
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
