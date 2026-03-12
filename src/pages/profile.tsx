@@ -9,24 +9,12 @@ import {
 import { useProfile } from "@/hooks/useProfile";
 import { useSession } from "@/hooks/useSession";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Experience, Skill } from "@/types/profile";
 import { EditPersonalInfoModal } from "@/components/EditPersonalInfoModal";
 import { ExperienceModal } from "@/components/ExperienceModal";
 import { SkillModal } from "@/components/SkillModal";
 import { PreferencesModal } from "@/components/PreferencesModal";
-
-type OnboardingStep = "personal" | "experience" | "skills" | "preferences";
-
-const ONBOARDING_STEPS: OnboardingStep[] = [
-  "personal",
-  "experience",
-  "skills",
-  "preferences",
-];
-
-const ONBOARDING_SKIP_KEY_PREFIX = "profile_onboarding_skipped_";
+import { getOnboardingSkipKey, profileNeedsOnboarding } from "@/utils/profileOnboarding";
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -58,81 +46,12 @@ export default function ProfilePage() {
   const [selectedSkill, setSelectedSkill] = React.useState<Skill | undefined>();
   const [experienceMode, setExperienceMode] = React.useState<'add' | 'edit'>('add');
   const [skillMode, setSkillMode] = React.useState<'add' | 'edit'>('add');
-  const [currentOnboardingStep, setCurrentOnboardingStep] = React.useState(0);
-  const [isOnboardingFlowActive, setIsOnboardingFlowActive] = React.useState(false);
   const [hasSkippedOnboarding, setHasSkippedOnboarding] = React.useState(false);
 
-  const [onboardingPersonalData, setOnboardingPersonalData] = React.useState({
-    carrera: "",
-    universidad: "",
-    fechaGraduacion: "",
-    telefono: "",
-    ubicacion: "",
-    bio: "",
-    nivelIngles: "",
-  });
-  const [onboardingExperienceData, setOnboardingExperienceData] = React.useState<Experience>({
-    cargo: "",
-    empresa: "",
-    fechaInicio: "",
-    fechaFin: null,
-    esActual: false,
-    ubicacion: "",
-    descripcion: "",
-  });
-  const [onboardingSkillData, setOnboardingSkillData] = React.useState<Skill>({
-    nombre: "",
-    tipo: "tecnica",
-    nivel: "Intermedio",
-    descripcion: "",
-  });
-  const [onboardingPreferencesData, setOnboardingPreferencesData] = React.useState<{
-    cargo: string;
-    industria: string;
-    ubicacion: string;
-    salarioEsperado?: number;
-    tipoContrato: string;
-    disponibilidadInmediata: boolean;
-  }>({
-    cargo: "",
-    industria: "",
-    ubicacion: "",
-    salarioEsperado: undefined,
-    tipoContrato: "",
-    disponibilidadInmediata: false,
-  });
-  const [isOnboardingSaving, setIsOnboardingSaving] = React.useState(false);
-  const [onboardingError, setOnboardingError] = React.useState<string | null>(null);
-
-  const needsOnboarding = React.useMemo(() => {
-    if (!profile) return false;
-
-    const hasEssentialInfo = Boolean(
-      profile.carrera?.trim() ||
-      profile.universidad?.trim() ||
-      profile.telefono?.trim() ||
-      profile.ubicacion?.trim() ||
-      profile.bio?.trim() ||
-      profile.fechaGraduacion ||
-      profile.nivelIngles
-    );
-
-    const hasProfileActivity =
-      profile.experiencias.length > 0 ||
-      profile.habilidades.length > 0 ||
-      Boolean(profile.preferencias);
-
-    return !hasEssentialInfo && !hasProfileActivity;
-  }, [profile]);
-
-  const currentOnboardingKey = ONBOARDING_STEPS[currentOnboardingStep];
-  const onboardingStepLabels: Record<OnboardingStep, string> = {
-    personal: "Datos Básicos",
-    experience: "Experiencia",
-    skills: "Habilidades",
-    preferences: "Preferencias",
-  };
-  const showOnboarding = Boolean(profile && !isLoading && !error && isOnboardingFlowActive);
+  const needsOnboarding = React.useMemo(() => profileNeedsOnboarding(profile), [profile]);
+  const shouldRedirectToOnboarding = Boolean(
+    profile && !isLoading && !error && needsOnboarding && !hasSkippedOnboarding
+  );
 
   // Redirigir si no está autenticado
   React.useEffect(() => {
@@ -175,54 +94,22 @@ export default function ProfilePage() {
   React.useEffect(() => {
     if (!profile || typeof window === "undefined") return;
 
-    const skipKey = `${ONBOARDING_SKIP_KEY_PREFIX}${profile.id}`;
-    const skipped = localStorage.getItem(skipKey) === "1";
-    setHasSkippedOnboarding(skipped);
-
-    setOnboardingPersonalData({
-      carrera: profile.carrera || "",
-      universidad: profile.universidad || "",
-      fechaGraduacion: profile.fechaGraduacion || "",
-      telefono: profile.telefono || "",
-      ubicacion: profile.ubicacion || "",
-      bio: profile.bio || "",
-      nivelIngles: profile.nivelIngles || "",
-    });
-    setOnboardingExperienceData({
-      cargo: "",
-      empresa: "",
-      fechaInicio: "",
-      fechaFin: null,
-      esActual: false,
-      ubicacion: "",
-      descripcion: "",
-    });
-    setOnboardingSkillData({
-      nombre: "",
-      tipo: "tecnica",
-      nivel: "Intermedio",
-      descripcion: "",
-    });
-    setOnboardingPreferencesData({
-      cargo: profile.preferencias?.cargo || "",
-      industria: profile.preferencias?.industria || "",
-      ubicacion: profile.preferencias?.ubicacion || "",
-      salarioEsperado: profile.preferencias?.salarioEsperado,
-      tipoContrato: profile.preferencias?.tipoContrato || "",
-      disponibilidadInmediata: profile.preferencias?.disponibilidadInmediata || false,
-    });
-    setOnboardingError(null);
-
-    if (needsOnboarding && !skipped) {
-      setCurrentOnboardingStep(0);
-      setIsOnboardingFlowActive(true);
+    const skipKey = getOnboardingSkipKey(profile.id);
+    if (!needsOnboarding) {
+      localStorage.removeItem(skipKey);
+      setHasSkippedOnboarding(false);
       return;
     }
 
-    if (!needsOnboarding) {
-      setIsOnboardingFlowActive(false);
-    }
+    const skipped = localStorage.getItem(skipKey) === "1";
+    setHasSkippedOnboarding(skipped);
   }, [profile, needsOnboarding]);
+
+  React.useEffect(() => {
+    if (shouldRedirectToOnboarding) {
+      router.replace("/Onboarding");
+    }
+  }, [router, shouldRedirectToOnboarding]);
 
   // Manejar error de imagen y mostrar iniciales
   const handleImageError = () => {
@@ -308,147 +195,13 @@ export default function ProfilePage() {
     await updatePreferencias(data);
   };
 
-  const handleSkipOnboarding = () => {
-    if (profile && typeof window !== "undefined") {
-      const skipKey = `${ONBOARDING_SKIP_KEY_PREFIX}${profile.id}`;
-      localStorage.setItem(skipKey, "1");
-    }
-    setHasSkippedOnboarding(true);
-    setCurrentOnboardingStep(0);
-    setIsOnboardingFlowActive(false);
-    setOnboardingError(null);
-  };
-
   const handleResumeOnboarding = () => {
     if (profile && typeof window !== "undefined") {
-      const skipKey = `${ONBOARDING_SKIP_KEY_PREFIX}${profile.id}`;
+      const skipKey = getOnboardingSkipKey(profile.id);
       localStorage.removeItem(skipKey);
     }
     setHasSkippedOnboarding(false);
-    setCurrentOnboardingStep(0);
-    setIsOnboardingFlowActive(true);
-    setOnboardingError(null);
-  };
-
-  const handleOnboardingBack = () => {
-    if (currentOnboardingStep > 0) {
-      setCurrentOnboardingStep((prev) => prev - 1);
-      setOnboardingError(null);
-    }
-  };
-
-  const handleOnboardingContinue = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-
-    const isLastStep = currentOnboardingStep === ONBOARDING_STEPS.length - 1;
-    const hasAnyExperienceData = Boolean(
-      onboardingExperienceData.cargo?.trim() ||
-      onboardingExperienceData.empresa?.trim() ||
-      onboardingExperienceData.fechaInicio ||
-      onboardingExperienceData.ubicacion?.trim() ||
-      onboardingExperienceData.descripcion?.trim() ||
-      onboardingExperienceData.esActual
-    );
-    const hasAnySkillData = Boolean(
-      onboardingSkillData.nombre?.trim() || onboardingSkillData.descripcion?.trim()
-    );
-    const hasAnyPreferencesData = Boolean(
-      onboardingPreferencesData.cargo?.trim() ||
-      onboardingPreferencesData.industria?.trim() ||
-      onboardingPreferencesData.ubicacion?.trim() ||
-      onboardingPreferencesData.salarioEsperado ||
-      onboardingPreferencesData.tipoContrato ||
-      onboardingPreferencesData.disponibilidadInmediata
-    );
-
-    if (currentOnboardingKey === "personal") {
-      if (
-        !onboardingPersonalData.carrera.trim() ||
-        !onboardingPersonalData.universidad.trim() ||
-        !onboardingPersonalData.nivelIngles
-      ) {
-        setOnboardingError("Completa carrera, universidad y nivel de inglés para continuar.");
-        return;
-      }
-    }
-
-    if (currentOnboardingKey === "experience" && hasAnyExperienceData) {
-      if (
-        !onboardingExperienceData.cargo.trim() ||
-        !onboardingExperienceData.empresa.trim() ||
-        !onboardingExperienceData.fechaInicio
-      ) {
-        setOnboardingError("Si agregas experiencia, completa cargo, empresa y fecha de inicio.");
-        return;
-      }
-    }
-
-    if (currentOnboardingKey === "skills" && hasAnySkillData && !onboardingSkillData.nombre.trim()) {
-      setOnboardingError("Si agregas una habilidad, el nombre es obligatorio.");
-      return;
-    }
-
-    setOnboardingError(null);
-
-    if (!isLastStep) {
-      setCurrentOnboardingStep((prev) => prev + 1);
-      return;
-    }
-
-    setIsOnboardingSaving(true);
-
-    try {
-      await updateProfile({
-        carrera: onboardingPersonalData.carrera,
-        universidad: onboardingPersonalData.universidad,
-        fechaGraduacion: onboardingPersonalData.fechaGraduacion || undefined,
-        telefono: onboardingPersonalData.telefono || undefined,
-        ubicacion: onboardingPersonalData.ubicacion || undefined,
-        bio: onboardingPersonalData.bio || undefined,
-        nivelIngles: onboardingPersonalData.nivelIngles || undefined,
-      });
-
-      if (hasAnyExperienceData) {
-        await addExperience({
-          ...onboardingExperienceData,
-          fechaFin: onboardingExperienceData.esActual
-            ? null
-            : onboardingExperienceData.fechaFin || null,
-        });
-      }
-
-      if (hasAnySkillData) {
-        await addSkill({
-          ...onboardingSkillData,
-          descripcion: onboardingSkillData.descripcion || undefined,
-        });
-      }
-
-      if (hasAnyPreferencesData) {
-        await updatePreferencias({
-          cargo: onboardingPreferencesData.cargo || undefined,
-          industria: onboardingPreferencesData.industria || undefined,
-          ubicacion: onboardingPreferencesData.ubicacion || undefined,
-          salarioEsperado: onboardingPreferencesData.salarioEsperado || undefined,
-          tipoContrato: onboardingPreferencesData.tipoContrato || undefined,
-          disponibilidadInmediata: onboardingPreferencesData.disponibilidadInmediata,
-        });
-      }
-
-      if (profile && typeof window !== "undefined") {
-        const skipKey = `${ONBOARDING_SKIP_KEY_PREFIX}${profile.id}`;
-        localStorage.removeItem(skipKey);
-      }
-
-      setHasSkippedOnboarding(false);
-      setCurrentOnboardingStep(0);
-      setIsOnboardingFlowActive(false);
-      setActiveTab('info');
-    } catch (err) {
-      setOnboardingError(err instanceof Error ? err.message : 'No se pudo completar el onboarding.');
-    } finally {
-      setIsOnboardingSaving(false);
-    }
+    router.push("/Onboarding");
   };
 
   // Mostrar loading durante la verificación de sesión
@@ -548,443 +301,17 @@ export default function ProfilePage() {
             </div>
           )}
 
-          {/* Onboarding State */}
-          {showOnboarding && (
-            <div className="bg-white rounded-lg shadow-sm border border-blue-200 p-6">
-              <div className="mb-6 flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900">Bienvenido, completa tu perfil</h2>
-                  <p className="text-gray-600 mt-2">
-                    Paso {currentOnboardingStep + 1} de {ONBOARDING_STEPS.length}: {onboardingStepLabels[currentOnboardingKey]}.
-                  </p>
-                </div>
-                <Button type="button" variant="outline" onClick={handleSkipOnboarding}>
-                  Omitir por ahora
-                </Button>
+          {shouldRedirectToOnboarding && (
+            <div className="bg-white rounded-lg shadow-sm border border-blue-200 p-8">
+              <div className="flex items-center justify-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mr-3" />
+                <p className="text-gray-600">Redirigiendo al onboarding...</p>
               </div>
-
-              <div className="mb-6 grid grid-cols-2 md:grid-cols-4 gap-2">
-                {ONBOARDING_STEPS.map((stepKey, index) => (
-                  <div
-                    key={stepKey}
-                    className={`rounded-md px-3 py-2 text-sm text-center border ${
-                      index === currentOnboardingStep
-                        ? "bg-blue-600 text-white border-blue-600"
-                        : index < currentOnboardingStep
-                        ? "bg-blue-50 text-blue-700 border-blue-200"
-                        : "bg-gray-50 text-gray-500 border-gray-200"
-                    }`}
-                  >
-                    {onboardingStepLabels[stepKey]}
-                  </div>
-                ))}
-              </div>
-
-              <form onSubmit={handleOnboardingContinue} className="space-y-5">
-                {onboardingError && (
-                  <div className="p-3 bg-red-50 border border-red-200 rounded-md text-red-700 text-sm">
-                    {onboardingError}
-                  </div>
-                )}
-
-                {currentOnboardingKey === "personal" && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="onboarding-carrera">Carrera *</Label>
-                      <Input
-                        id="onboarding-carrera"
-                        value={onboardingPersonalData.carrera}
-                        onChange={(e) =>
-                          setOnboardingPersonalData((prev) => ({ ...prev, carrera: e.target.value }))
-                        }
-                        placeholder="Ej: Ingeniería de Sistemas"
-                        className="mt-1"
-                      />
-                    </div>
-
-                    <div>
-                      <Label htmlFor="onboarding-universidad">Universidad *</Label>
-                      <Input
-                        id="onboarding-universidad"
-                        value={onboardingPersonalData.universidad}
-                        onChange={(e) =>
-                          setOnboardingPersonalData((prev) => ({ ...prev, universidad: e.target.value }))
-                        }
-                        placeholder="Ej: Universidad Nacional de Colombia"
-                        className="mt-1"
-                      />
-                    </div>
-
-                    <div>
-                      <Label htmlFor="onboarding-fechaGraduacion">Fecha de graduación</Label>
-                      <Input
-                        id="onboarding-fechaGraduacion"
-                        type="date"
-                        value={onboardingPersonalData.fechaGraduacion}
-                        onChange={(e) =>
-                          setOnboardingPersonalData((prev) => ({ ...prev, fechaGraduacion: e.target.value }))
-                        }
-                        className="mt-1"
-                      />
-                    </div>
-
-                    <div>
-                      <Label htmlFor="onboarding-nivelIngles">Nivel de inglés *</Label>
-                      <select
-                        id="onboarding-nivelIngles"
-                        value={onboardingPersonalData.nivelIngles}
-                        onChange={(e) =>
-                          setOnboardingPersonalData((prev) => ({ ...prev, nivelIngles: e.target.value }))
-                        }
-                        aria-label="Seleccionar nivel de inglés"
-                        className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="">Seleccionar nivel</option>
-                        <option value="Basico">Básico</option>
-                        <option value="Intermedio">Intermedio</option>
-                        <option value="Avanzado">Avanzado</option>
-                        <option value="Fluido">Fluido</option>
-                        <option value="Nativo">Nativo</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <Label htmlFor="onboarding-telefono">Teléfono</Label>
-                      <Input
-                        id="onboarding-telefono"
-                        value={onboardingPersonalData.telefono}
-                        onChange={(e) =>
-                          setOnboardingPersonalData((prev) => ({ ...prev, telefono: e.target.value }))
-                        }
-                        placeholder="Ej: +57 300 000 0000"
-                        className="mt-1"
-                      />
-                    </div>
-
-                    <div>
-                      <Label htmlFor="onboarding-ubicacion">Ubicación</Label>
-                      <Input
-                        id="onboarding-ubicacion"
-                        value={onboardingPersonalData.ubicacion}
-                        onChange={(e) =>
-                          setOnboardingPersonalData((prev) => ({ ...prev, ubicacion: e.target.value }))
-                        }
-                        placeholder="Ej: Bogotá, Colombia"
-                        className="mt-1"
-                      />
-                    </div>
-
-                    <div className="md:col-span-2">
-                      <Label htmlFor="onboarding-bio">Descripción</Label>
-                      <textarea
-                        id="onboarding-bio"
-                        value={onboardingPersonalData.bio}
-                        onChange={(e) =>
-                          setOnboardingPersonalData((prev) => ({ ...prev, bio: e.target.value }))
-                        }
-                        placeholder="Cuéntanos brevemente sobre ti"
-                        className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        rows={4}
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {currentOnboardingKey === "experience" && (
-                  <div className="space-y-4">
-                    <p className="text-sm text-gray-600">
-                      Puedes agregar una experiencia inicial. Si no quieres agregarla ahora, deja este paso vacío y continúa.
-                    </p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="onboarding-exp-cargo">Cargo</Label>
-                        <Input
-                          id="onboarding-exp-cargo"
-                          value={onboardingExperienceData.cargo}
-                          onChange={(e) =>
-                            setOnboardingExperienceData((prev) => ({ ...prev, cargo: e.target.value }))
-                          }
-                          placeholder="Ej: Desarrollador Frontend"
-                          className="mt-1"
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="onboarding-exp-empresa">Empresa</Label>
-                        <Input
-                          id="onboarding-exp-empresa"
-                          value={onboardingExperienceData.empresa}
-                          onChange={(e) =>
-                            setOnboardingExperienceData((prev) => ({ ...prev, empresa: e.target.value }))
-                          }
-                          placeholder="Ej: LaborIA"
-                          className="mt-1"
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="onboarding-exp-inicio">Fecha inicio</Label>
-                        <Input
-                          id="onboarding-exp-inicio"
-                          type="date"
-                          value={onboardingExperienceData.fechaInicio}
-                          onChange={(e) =>
-                            setOnboardingExperienceData((prev) => ({ ...prev, fechaInicio: e.target.value }))
-                          }
-                          className="mt-1"
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="onboarding-exp-fin">Fecha fin</Label>
-                        <Input
-                          id="onboarding-exp-fin"
-                          type="date"
-                          value={onboardingExperienceData.fechaFin || ""}
-                          onChange={(e) =>
-                            setOnboardingExperienceData((prev) => ({
-                              ...prev,
-                              fechaFin: e.target.value || null,
-                            }))
-                          }
-                          disabled={onboardingExperienceData.esActual}
-                          className="mt-1"
-                        />
-                      </div>
-                      <div className="md:col-span-2">
-                        <label className="flex items-center gap-2 mt-1">
-                          <input
-                            type="checkbox"
-                            checked={onboardingExperienceData.esActual}
-                            onChange={(e) =>
-                              setOnboardingExperienceData((prev) => ({
-                                ...prev,
-                                esActual: e.target.checked,
-                                fechaFin: e.target.checked ? null : prev.fechaFin,
-                              }))
-                            }
-                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                          />
-                          <span className="text-sm text-gray-700">Trabajo actual</span>
-                        </label>
-                      </div>
-                      <div>
-                        <Label htmlFor="onboarding-exp-ubicacion">Ubicación</Label>
-                        <Input
-                          id="onboarding-exp-ubicacion"
-                          value={onboardingExperienceData.ubicacion || ""}
-                          onChange={(e) =>
-                            setOnboardingExperienceData((prev) => ({ ...prev, ubicacion: e.target.value }))
-                          }
-                          placeholder="Ej: Bogotá, Colombia"
-                          className="mt-1"
-                        />
-                      </div>
-                      <div className="md:col-span-2">
-                        <Label htmlFor="onboarding-exp-descripcion">Descripción</Label>
-                        <textarea
-                          id="onboarding-exp-descripcion"
-                          value={onboardingExperienceData.descripcion || ""}
-                          onChange={(e) =>
-                            setOnboardingExperienceData((prev) => ({ ...prev, descripcion: e.target.value }))
-                          }
-                          placeholder="Describe brevemente tus responsabilidades o logros"
-                          aria-label="Descripción de experiencia"
-                          className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          rows={3}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {currentOnboardingKey === "skills" && (
-                  <div className="space-y-4">
-                    <p className="text-sm text-gray-600">
-                      Agrega una habilidad inicial para mejorar tus recomendaciones. También puedes dejar este paso vacío.
-                    </p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="onboarding-skill-nombre">Habilidad</Label>
-                        <Input
-                          id="onboarding-skill-nombre"
-                          value={onboardingSkillData.nombre}
-                          onChange={(e) =>
-                            setOnboardingSkillData((prev) => ({ ...prev, nombre: e.target.value }))
-                          }
-                          placeholder="Ej: React"
-                          className="mt-1"
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="onboarding-skill-tipo">Tipo</Label>
-                        <select
-                          id="onboarding-skill-tipo"
-                          value={onboardingSkillData.tipo}
-                          onChange={(e) =>
-                            setOnboardingSkillData((prev) => ({
-                              ...prev,
-                              tipo: e.target.value as Skill["tipo"],
-                            }))
-                          }
-                          aria-label="Seleccionar tipo de habilidad"
-                          className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        >
-                          <option value="tecnica">Técnica</option>
-                          <option value="blanda">Blanda</option>
-                        </select>
-                      </div>
-                      <div>
-                        <Label htmlFor="onboarding-skill-nivel">Nivel</Label>
-                        <select
-                          id="onboarding-skill-nivel"
-                          value={onboardingSkillData.nivel}
-                          onChange={(e) =>
-                            setOnboardingSkillData((prev) => ({
-                              ...prev,
-                              nivel: e.target.value as Skill["nivel"],
-                            }))
-                          }
-                          aria-label="Seleccionar nivel de habilidad"
-                          className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        >
-                          <option value="Basico">Básico</option>
-                          <option value="Intermedio">Intermedio</option>
-                          <option value="Avanzado">Avanzado</option>
-                        </select>
-                      </div>
-                      <div className="md:col-span-2">
-                        <Label htmlFor="onboarding-skill-descripcion">Descripción</Label>
-                        <textarea
-                          id="onboarding-skill-descripcion"
-                          value={onboardingSkillData.descripcion || ""}
-                          onChange={(e) =>
-                            setOnboardingSkillData((prev) => ({ ...prev, descripcion: e.target.value }))
-                          }
-                          placeholder="Agrega una descripción opcional de la habilidad"
-                          aria-label="Descripción de habilidad"
-                          className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          rows={3}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {currentOnboardingKey === "preferences" && (
-                  <div className="space-y-4">
-                    <p className="text-sm text-gray-600">
-                      Último paso: tus preferencias laborales. Puedes completarlo ahora o dejarlo para después.
-                    </p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="onboarding-pref-cargo">Cargo deseado</Label>
-                        <Input
-                          id="onboarding-pref-cargo"
-                          value={onboardingPreferencesData.cargo}
-                          onChange={(e) =>
-                            setOnboardingPreferencesData((prev) => ({ ...prev, cargo: e.target.value }))
-                          }
-                          className="mt-1"
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="onboarding-pref-industria">Industria</Label>
-                        <Input
-                          id="onboarding-pref-industria"
-                          value={onboardingPreferencesData.industria}
-                          onChange={(e) =>
-                            setOnboardingPreferencesData((prev) => ({ ...prev, industria: e.target.value }))
-                          }
-                          className="mt-1"
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="onboarding-pref-ubicacion">Ubicación preferida</Label>
-                        <Input
-                          id="onboarding-pref-ubicacion"
-                          value={onboardingPreferencesData.ubicacion}
-                          onChange={(e) =>
-                            setOnboardingPreferencesData((prev) => ({ ...prev, ubicacion: e.target.value }))
-                          }
-                          className="mt-1"
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="onboarding-pref-salario">Salario esperado (COP)</Label>
-                        <Input
-                          id="onboarding-pref-salario"
-                          type="number"
-                          value={onboardingPreferencesData.salarioEsperado || ""}
-                          onChange={(e) =>
-                            setOnboardingPreferencesData((prev) => ({
-                              ...prev,
-                              salarioEsperado: e.target.value ? Number(e.target.value) : undefined,
-                            }))
-                          }
-                          className="mt-1"
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="onboarding-pref-contrato">Tipo de contrato</Label>
-                        <select
-                          id="onboarding-pref-contrato"
-                          value={onboardingPreferencesData.tipoContrato}
-                          onChange={(e) =>
-                            setOnboardingPreferencesData((prev) => ({ ...prev, tipoContrato: e.target.value }))
-                          }
-                          aria-label="Seleccionar tipo de contrato"
-                          className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        >
-                          <option value="">Seleccionar...</option>
-                          <option value="Tiempo completo">Tiempo completo</option>
-                          <option value="Medio tiempo">Medio tiempo</option>
-                          <option value="Freelance">Freelance</option>
-                          <option value="Contrato">Contrato</option>
-                          <option value="Por proyecto">Por proyecto</option>
-                        </select>
-                      </div>
-                      <div className="md:col-span-2">
-                        <label className="flex items-center gap-2 mt-1">
-                          <input
-                            type="checkbox"
-                            checked={onboardingPreferencesData.disponibilidadInmediata}
-                            onChange={(e) =>
-                              setOnboardingPreferencesData((prev) => ({
-                                ...prev,
-                                disponibilidadInmediata: e.target.checked,
-                              }))
-                            }
-                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                          />
-                          <span className="text-sm text-gray-700">Disponibilidad inmediata</span>
-                        </label>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex items-center justify-between pt-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handleOnboardingBack}
-                    disabled={currentOnboardingStep === 0 || isOnboardingSaving}
-                  >
-                    Volver
-                  </Button>
-
-                  <Button type="submit" disabled={isOnboardingSaving}>
-                    {isOnboardingSaving
-                      ? "Guardando..."
-                      : currentOnboardingStep === ONBOARDING_STEPS.length - 1
-                      ? "Finalizar onboarding"
-                      : "Continuar"}
-                  </Button>
-                </div>
-              </form>
             </div>
           )}
 
           {/* Profile Data */}
-          {profile && !isLoading && !error && !showOnboarding && (
+          {profile && !isLoading && !error && !shouldRedirectToOnboarding && (
             <div className="space-y-6">
               {/* Profile Header Card */}
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
