@@ -68,6 +68,8 @@ export interface PerfilCompleto {
   // Información adicional
   telefono?: string;
   ubicacion?: string;
+  carrera?: string;
+  universidad?: string;
   fechaGraduacion?: string;
   bio?: string;
   nivelIngles?: string;
