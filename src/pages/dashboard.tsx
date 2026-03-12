@@ -10,10 +10,26 @@ import {
   User 
 } from 'lucide-react';
 import { clearTokens, clearProvider, getAccessToken } from '@/utils/session';
+import { useSession } from '@/hooks/useSession';
+import { useProfile } from '@/hooks/useProfile';
+import { hasSkippedOnboarding, profileNeedsOnboarding } from '@/utils/profileOnboarding';
 import PrivateRoute from "@/components/PrivateRoute";
 
 export default function Dashboard() {
   const router = useRouter();
+  const { isAuthenticated, isLoading: sessionLoading } = useSession();
+  const { profile, isLoading: profileLoading } = useProfile();
+  const shouldOpenOnboarding = React.useMemo(() => {
+    if (!profile) return false;
+
+    return profileNeedsOnboarding(profile) && !hasSkippedOnboarding(profile.id);
+  }, [profile]);
+
+  React.useEffect(() => {
+    if (!sessionLoading && isAuthenticated && !profileLoading && shouldOpenOnboarding) {
+      router.replace('/Onboarding');
+    }
+  }, [isAuthenticated, profileLoading, router, sessionLoading, shouldOpenOnboarding]);
 
   const handleLogout = async () => {
     const accessToken = getAccessToken();
@@ -45,8 +61,30 @@ export default function Dashboard() {
     }
   };
 
+  if (sessionLoading || (isAuthenticated && profileLoading)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Cargando tu experiencia...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (shouldOpenOnboarding) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Redirigiendo al onboarding...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    //<PrivateRoute>
+    <PrivateRoute>
       <>
         <Head>
           <title>Dashboard - LaborIA</title>
@@ -201,6 +239,6 @@ export default function Dashboard() {
           </main>
         </div>
       </>
-    //</PrivateRoute>
+    </PrivateRoute>
   );
 }

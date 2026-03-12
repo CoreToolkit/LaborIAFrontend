@@ -14,7 +14,11 @@ import { EditPersonalInfoModal } from "@/components/EditPersonalInfoModal";
 import { ExperienceModal } from "@/components/ExperienceModal";
 import { SkillModal } from "@/components/SkillModal";
 import { PreferencesModal } from "@/components/PreferencesModal";
-import { getOnboardingSkipKey, profileNeedsOnboarding } from "@/utils/profileOnboarding";
+import {
+  clearOnboardingSkipped,
+  hasSkippedOnboarding as hasSkippedOnboardingFlag,
+  profileNeedsOnboarding,
+} from "@/utils/profileOnboarding";
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -49,9 +53,6 @@ export default function ProfilePage() {
   const [hasSkippedOnboarding, setHasSkippedOnboarding] = React.useState(false);
 
   const needsOnboarding = React.useMemo(() => profileNeedsOnboarding(profile), [profile]);
-  const shouldRedirectToOnboarding = Boolean(
-    profile && !isLoading && !error && needsOnboarding && !hasSkippedOnboarding
-  );
 
   // Redirigir si no está autenticado
   React.useEffect(() => {
@@ -92,24 +93,16 @@ export default function ProfilePage() {
   }, [profile]);
 
   React.useEffect(() => {
-    if (!profile || typeof window === "undefined") return;
+    if (!profile) return;
 
-    const skipKey = getOnboardingSkipKey(profile.id);
     if (!needsOnboarding) {
-      localStorage.removeItem(skipKey);
+      clearOnboardingSkipped(profile.id);
       setHasSkippedOnboarding(false);
       return;
     }
 
-    const skipped = localStorage.getItem(skipKey) === "1";
-    setHasSkippedOnboarding(skipped);
+    setHasSkippedOnboarding(hasSkippedOnboardingFlag(profile.id));
   }, [profile, needsOnboarding]);
-
-  React.useEffect(() => {
-    if (shouldRedirectToOnboarding) {
-      router.replace("/Onboarding");
-    }
-  }, [router, shouldRedirectToOnboarding]);
 
   // Manejar error de imagen y mostrar iniciales
   const handleImageError = () => {
@@ -196,9 +189,8 @@ export default function ProfilePage() {
   };
 
   const handleResumeOnboarding = () => {
-    if (profile && typeof window !== "undefined") {
-      const skipKey = getOnboardingSkipKey(profile.id);
-      localStorage.removeItem(skipKey);
+    if (profile) {
+      clearOnboardingSkipped(profile.id);
     }
     setHasSkippedOnboarding(false);
     router.push("/Onboarding");
@@ -301,17 +293,8 @@ export default function ProfilePage() {
             </div>
           )}
 
-          {shouldRedirectToOnboarding && (
-            <div className="bg-white rounded-lg shadow-sm border border-blue-200 p-8">
-              <div className="flex items-center justify-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mr-3" />
-                <p className="text-gray-600">Redirigiendo al onboarding...</p>
-              </div>
-            </div>
-          )}
-
           {/* Profile Data */}
-          {profile && !isLoading && !error && !shouldRedirectToOnboarding && (
+          {profile && !isLoading && !error && (
             <div className="space-y-6">
               {/* Profile Header Card */}
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">

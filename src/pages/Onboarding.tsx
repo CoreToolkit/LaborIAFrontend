@@ -8,7 +8,11 @@ import { Label } from "@/components/ui/label";
 import { useProfile } from "@/hooks/useProfile";
 import { useSession } from "@/hooks/useSession";
 import { Experience, Skill } from "@/types/profile";
-import { getOnboardingSkipKey, profileNeedsOnboarding } from "@/utils/profileOnboarding";
+import {
+  clearOnboardingSkipped,
+  markOnboardingSkipped,
+  profileNeedsOnboarding,
+} from "@/utils/profileOnboarding";
 
 type OnboardingStep = "personal" | "experience" | "skills" | "preferences";
 
@@ -112,16 +116,16 @@ export default function OnboardingPage() {
     if (!profile || isLoading || error) return;
 
     if (!needsOnboarding) {
-      router.replace("/profile");
+      router.replace("/dashboard");
     }
   }, [profile, isLoading, error, needsOnboarding, router]);
 
   const handleSkip = () => {
-    if (profile && typeof window !== "undefined") {
-      localStorage.setItem(getOnboardingSkipKey(profile.id), "1");
+    if (profile) {
+      markOnboardingSkipped(profile.id);
     }
 
-    router.push("/profile");
+    router.replace("/dashboard");
   };
 
   const handleBack = () => {
@@ -217,11 +221,11 @@ export default function OnboardingPage() {
         });
       }
 
-      if (profile && typeof window !== "undefined") {
-        localStorage.removeItem(getOnboardingSkipKey(profile.id));
+      if (profile) {
+        clearOnboardingSkipped(profile.id);
       }
 
-      router.push("/profile");
+      router.replace("/dashboard");
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "No se pudo completar el onboarding.");
     } finally {
