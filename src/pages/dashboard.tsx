@@ -6,7 +6,8 @@ import {
   Clock, 
   LogOut, 
   Bell, 
-  Settings 
+  Settings,
+  User 
 } from 'lucide-react';
 import { clearTokens, clearProvider, getAccessToken } from '@/utils/session';
 import PrivateRoute from "@/components/PrivateRoute";
@@ -69,12 +70,29 @@ export default function Dashboard() {
 
                 {/* Actions */}
                 <div className="flex items-center gap-4 ">
-                  <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                  <button 
+                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                    aria-label="Notificaciones"
+                    title="Notificaciones"
+                  >
                     <Bell className="w-5 h-5 text-gray-600" />
                   </button>
-                  <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                  <button 
+                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                    aria-label="Configuración"
+                    title="Configuración"
+                  >
                     <Settings className="w-5 h-5 text-gray-600" />
                   </button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => router.push('/profile')}
+                    className="gap-2 cursor-pointer hover:bg-blue-600 hover:text-white transition-colors"
+                  >
+                    <User className="w-4 h-4" />
+                    Mi Perfil
+                  </Button>
                   <Button
                     variant="outline"
                     size="sm"
