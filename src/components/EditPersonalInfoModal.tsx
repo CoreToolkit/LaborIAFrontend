@@ -186,7 +186,6 @@ export function EditPersonalInfoModal({
               <option value="Basico">Básico</option>
               <option value="Intermedio">Intermedio</option>
               <option value="Avanzado">Avanzado</option>
-              <option value="Fluido">Fluido</option>
               <option value="Nativo">Nativo</option>
             </select>
           </div>

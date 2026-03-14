@@ -41,7 +41,6 @@ export default function OnboardingPage() {
     updateProfile,
     addExperience,
     addSkill,
-    updatePreferencias,
   } = useProfile();
 
   const [currentStep, setCurrentStep] = React.useState(0);
@@ -194,6 +193,16 @@ export default function OnboardingPage() {
         ubicacion: personalData.ubicacion || undefined,
         bio: personalData.bio || undefined,
         nivelIngles: personalData.nivelIngles || undefined,
+        preferencias: hasAnyPreferencesData
+          ? {
+              cargo: preferencesData.cargo || undefined,
+              industria: preferencesData.industria || undefined,
+              ubicacion: preferencesData.ubicacion || undefined,
+              salarioEsperado: preferencesData.salarioEsperado || undefined,
+              tipoContrato: preferencesData.tipoContrato || undefined,
+              disponibilidadInmediata: preferencesData.disponibilidadInmediata,
+            }
+          : undefined,
       });
 
       if (hasAnyExperienceData) {
@@ -207,17 +216,6 @@ export default function OnboardingPage() {
         await addSkill({
           ...skillData,
           descripcion: skillData.descripcion || undefined,
-        });
-      }
-
-      if (hasAnyPreferencesData) {
-        await updatePreferencias({
-          cargo: preferencesData.cargo || undefined,
-          industria: preferencesData.industria || undefined,
-          ubicacion: preferencesData.ubicacion || undefined,
-          salarioEsperado: preferencesData.salarioEsperado || undefined,
-          tipoContrato: preferencesData.tipoContrato || undefined,
-          disponibilidadInmediata: preferencesData.disponibilidadInmediata,
         });
       }
 
@@ -380,7 +378,6 @@ export default function OnboardingPage() {
                         <option value="Basico">Básico</option>
                         <option value="Intermedio">Intermedio</option>
                         <option value="Avanzado">Avanzado</option>
-                        <option value="Fluido">Fluido</option>
                         <option value="Nativo">Nativo</option>
                       </select>
                     </div>
@@ -622,9 +619,9 @@ export default function OnboardingPage() {
                           <option value="">Seleccionar...</option>
                           <option value="Tiempo completo">Tiempo completo</option>
                           <option value="Medio tiempo">Medio tiempo</option>
+                          <option value="Pasantía">Pasantía</option>
                           <option value="Freelance">Freelance</option>
                           <option value="Contrato">Contrato</option>
-                          <option value="Por proyecto">Por proyecto</option>
                         </select>
                       </div>
                       <div className="md:col-span-2">

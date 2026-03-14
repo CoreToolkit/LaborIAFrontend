@@ -12,29 +12,29 @@ interface PreferencesModalProps {
   onSave: (data: Preferencias) => Promise<void>;
 }
 
+const DEFAULT_PREFERENCES: Preferencias = {
+  cargo: '',
+  industria: '',
+  ubicacion: '',
+  salarioEsperado: 0,
+  tipoContrato: '',
+  disponibilidadInmediata: false,
+};
+
 export function PreferencesModal({
   isOpen,
   onClose,
   initialData,
   onSave,
 }: PreferencesModalProps) {
-  const defaultPreferences: Preferencias = {
-    cargo: '',
-    industria: '',
-    ubicacion: '',
-    salarioEsperado: 0,
-    tipoContrato: '',
-    disponibilidadInmediata: false,
-  };
-
-  const [formData, setFormData] = useState<Preferencias>(initialData || defaultPreferences);
+  const [formData, setFormData] = useState<Preferencias>(initialData || DEFAULT_PREFERENCES);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Sincronizar formData cuando initialData o isOpen cambien
   useEffect(() => {
     if (isOpen) {
-      setFormData(initialData || defaultPreferences);
+      setFormData(initialData || DEFAULT_PREFERENCES);
       setError(null);
     }
   }, [isOpen, initialData]);
@@ -144,9 +144,9 @@ export function PreferencesModal({
                 <option value="">Seleccionar...</option>
                 <option value="Tiempo completo">Tiempo completo</option>
                 <option value="Medio tiempo">Medio tiempo</option>
+                <option value="Pasantía">Pasantía</option>
                 <option value="Freelance">Freelance</option>
                 <option value="Contrato">Contrato</option>
-                <option value="Por proyecto">Por proyecto</option>
               </select>
             </div>
 
