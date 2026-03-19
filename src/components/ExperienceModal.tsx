@@ -25,7 +25,7 @@ export function ExperienceModal({
       cargo: '',
       empresa: '',
       fechaInicio: '',
-      fechaFin: '',
+      fechaFin: null,
       esActual: false,
       descripcion: '',
       ubicacion: '',
@@ -105,10 +105,9 @@ export function ExperienceModal({
               <Label htmlFor="fechaInicio">Fecha de inicio *</Label>
               <Input
                 id="fechaInicio"
-                type="text"
+                type="date"
                 value={formData.fechaInicio}
                 onChange={(e) => setFormData({ ...formData, fechaInicio: e.target.value })}
-                placeholder="Ej: Enero 2020"
                 required
                 className="mt-1"
               />
@@ -118,10 +117,9 @@ export function ExperienceModal({
               <Label htmlFor="fechaFin">Fecha de fin</Label>
               <Input
                 id="fechaFin"
-                type="text"
+                type="date"
                 value={formData.fechaFin || ''}
-                onChange={(e) => setFormData({ ...formData, fechaFin: e.target.value })}
-                placeholder="Ej: Diciembre 2022"
+                onChange={(e) => setFormData({ ...formData, fechaFin: e.target.value || null })}
                 disabled={formData.esActual}
                 className="mt-1"
               />
@@ -136,7 +134,7 @@ export function ExperienceModal({
                     setFormData({
                       ...formData,
                       esActual: e.target.checked,
-                      fechaFin: e.target.checked ? '' : formData.fechaFin,
+                      fechaFin: e.target.checked ? null : formData.fechaFin,
                     })
                   }
                   className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"

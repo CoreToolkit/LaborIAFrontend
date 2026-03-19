@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { getAccessToken } from "@/utils/session";
+import { useRouter } from "next/router";
+import { clearTokens, getAccessToken } from "@/utils/session";
 
 export interface UserProfile {
   id: string;
@@ -72,6 +73,7 @@ function decodeJWT(token: string): UserProfile | null {
 }
 
 export function useUserProfile(): UseUserProfileResult {
+  const router = useRouter();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -90,7 +92,10 @@ export function useUserProfile(): UseUserProfileResult {
     }
 
     if (!token) {
-      setError("No se encontró el token de autenticación. Por favor, inicia sesión.");
+      clearTokens();
+      setProfile(null);
+      setError(null);
+      router.replace("/login");
       setIsLoading(false);
       return;
     }
@@ -107,7 +112,12 @@ export function useUserProfile(): UseUserProfileResult {
 
       if (!response.ok) {
         if (response.status === 401) {
-          throw new Error("Sesión expirada. Por favor, inicia sesión nuevamente.");
+          clearTokens();
+          setProfile(null);
+          setError(null);
+          router.replace("/login");
+          setIsLoading(false);
+          return;
         }
         if (response.status === 404) {
           // Si el endpoint no existe, usar el JWT como fallback

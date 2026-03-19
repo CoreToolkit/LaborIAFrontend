@@ -6,13 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useProfile } from "@/hooks/useProfile";
-import { useSession } from "@/hooks/useSession";
 import { Experience, Skill } from "@/types/profile";
 import {
   clearOnboardingSkipped,
   markOnboardingSkipped,
   profileNeedsOnboarding,
 } from "@/utils/profileOnboarding";
+import PrivateRoute from "@/components/PrivateRoute";
 
 type OnboardingStep = "personal" | "experience" | "skills" | "preferences";
 
@@ -30,9 +30,25 @@ const STEP_LABELS: Record<OnboardingStep, string> = {
   preferences: "Preferencias",
 };
 
-export default function OnboardingPage() {
+const EMPTY_EXPERIENCE: Experience = {
+  cargo: "",
+  empresa: "",
+  fechaInicio: "",
+  fechaFin: null,
+  esActual: false,
+  ubicacion: "",
+  descripcion: "",
+};
+
+const EMPTY_SKILL: Skill = {
+  nombre: "",
+  tipo: "tecnica",
+  nivel: "Intermedio",
+  descripcion: "",
+};
+
+function OnboardingContent() {
   const router = useRouter();
-  const { isAuthenticated, isLoading: sessionLoading } = useSession();
   const {
     profile,
     isLoading,
@@ -40,7 +56,9 @@ export default function OnboardingPage() {
     refetch,
     updateProfile,
     addExperience,
+    updateExperience,
     addSkill,
+    updateSkill,
   } = useProfile();
 
   const [currentStep, setCurrentStep] = React.useState(0);
@@ -55,21 +73,8 @@ export default function OnboardingPage() {
     bio: "",
     nivelIngles: "",
   });
-  const [experienceData, setExperienceData] = React.useState<Experience>({
-    cargo: "",
-    empresa: "",
-    fechaInicio: "",
-    fechaFin: null,
-    esActual: false,
-    ubicacion: "",
-    descripcion: "",
-  });
-  const [skillData, setSkillData] = React.useState<Skill>({
-    nombre: "",
-    tipo: "tecnica",
-    nivel: "Intermedio",
-    descripcion: "",
-  });
+  const [experienceData, setExperienceData] = React.useState<Experience>(EMPTY_EXPERIENCE);
+  const [skillData, setSkillData] = React.useState<Skill>(EMPTY_SKILL);
   const [preferencesData, setPreferencesData] = React.useState({
     cargo: "",
     industria: "",
@@ -81,12 +86,6 @@ export default function OnboardingPage() {
 
   const needsOnboarding = React.useMemo(() => profileNeedsOnboarding(profile), [profile]);
   const currentStepKey = ONBOARDING_STEPS[currentStep];
-
-  React.useEffect(() => {
-    if (!sessionLoading && !isAuthenticated) {
-      router.replace("/login");
-    }
-  }, [isAuthenticated, sessionLoading, router]);
 
   React.useEffect(() => {
     if (!profile) return;
@@ -108,6 +107,36 @@ export default function OnboardingPage() {
       tipoContrato: profile.preferencias?.tipoContrato || "",
       disponibilidadInmediata: profile.preferencias?.disponibilidadInmediata || false,
     });
+
+    const firstExperience = profile.experiencias[0];
+    setExperienceData(
+      firstExperience
+        ? {
+            id: firstExperience.id,
+            cargo: firstExperience.cargo || "",
+            empresa: firstExperience.empresa || "",
+            fechaInicio: firstExperience.fechaInicio || "",
+            fechaFin: firstExperience.esActual ? null : firstExperience.fechaFin || null,
+            esActual: firstExperience.esActual || false,
+            ubicacion: firstExperience.ubicacion || "",
+            descripcion: firstExperience.descripcion || "",
+          }
+        : EMPTY_EXPERIENCE
+    );
+
+    const firstSkill = profile.habilidades[0];
+    setSkillData(
+      firstSkill
+        ? {
+            id: firstSkill.id,
+            nombre: firstSkill.nombre || "",
+            tipo: firstSkill.tipo || "tecnica",
+            nivel: firstSkill.nivel || "Intermedio",
+            descripcion: firstSkill.descripcion || "",
+          }
+        : EMPTY_SKILL
+    );
+
     setFormError(null);
   }, [profile]);
 
@@ -206,17 +235,29 @@ export default function OnboardingPage() {
       });
 
       if (hasAnyExperienceData) {
-        await addExperience({
+        const experiencePayload: Experience = {
           ...experienceData,
           fechaFin: experienceData.esActual ? null : experienceData.fechaFin || null,
-        });
+        };
+
+        if (experienceData.id) {
+          await updateExperience(experienceData.id, experiencePayload);
+        } else {
+          await addExperience(experiencePayload);
+        }
       }
 
       if (hasAnySkillData) {
-        await addSkill({
+        const skillPayload: Skill = {
           ...skillData,
           descripcion: skillData.descripcion || undefined,
-        });
+        };
+
+        if (skillData.id) {
+          await updateSkill(skillData.id, skillPayload);
+        } else {
+          await addSkill(skillPayload);
+        }
       }
 
       if (profile) {
@@ -230,21 +271,6 @@ export default function OnboardingPage() {
       setIsSaving(false);
     }
   };
-
-  if (sessionLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4" />
-          <p className="text-gray-600">Verificando sesión...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return null;
-  }
 
   return (
     <>
@@ -655,5 +681,13 @@ export default function OnboardingPage() {
         </main>
       </div>
     </>
+  );
+}
+
+export default function OnboardingPage() {
+  return (
+    <PrivateRoute>
+      <OnboardingContent />
+    </PrivateRoute>
   );
 }

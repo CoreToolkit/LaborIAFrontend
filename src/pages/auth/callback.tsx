@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/router";
 import {
-  Provider,
   getProvider,
+  getAccessToken,
   clearProvider,
   saveTokens,
   clearTokens,
@@ -10,7 +10,6 @@ import {
 
 export default function Callback() {
   const router = useRouter();
-  const [message, setMessage] = useState("Iniciando sesión...");
 
   useEffect(() => {
     if (!router.isReady) return;
@@ -19,6 +18,7 @@ export default function Callback() {
     const state = router.query.state as string | undefined;
     const oauthError = router.query.error as string | undefined;
     const provider = getProvider();
+    const existingToken = getAccessToken();
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
 
     const cleanup = (removeTokens = false) => {
@@ -28,21 +28,33 @@ export default function Callback() {
 
     if (oauthError) {
       console.error("El proveedor devolvió un error:", oauthError);
-      setMessage("El proveedor devolvió un error. Intenta nuevamente.");
+      if (existingToken) {
+        cleanup(false);
+        router.replace("/dashboard");
+        return;
+      }
       cleanup(true);
       router.replace("/login");
       return;
     }
 
     if (!code) {
-      setMessage("No se recibió el código de autorización.");
-      cleanup(true);
+      if (existingToken) {
+        cleanup(false);
+        router.replace("/dashboard");
+        return;
+      }
+      cleanup(false);
       router.replace("/login");
       return;
     }
 
     if (!provider) {
-      setMessage("No se encontró el proveedor en la sesión.");
+      if (existingToken) {
+        cleanup(false);
+        router.replace("/dashboard");
+        return;
+      }
       cleanup(true);
       router.replace("/login");
       return;
@@ -50,7 +62,6 @@ export default function Callback() {
 
     if (!backendUrl) {
       console.error("NEXT_PUBLIC_BACKEND_URL no está definida.");
-      setMessage("Configuración incompleta. Falta la URL del backend.");
       cleanup(true);
       return;
     }
@@ -81,15 +92,20 @@ export default function Callback() {
         saveTokens(data.access_token, data.refresh_token);
         cleanup(false);
 
-        router.push("/dashboard");
+        // Use replace so callback is not kept in browser history.
+        router.replace("/dashboard");
       })
       .catch((error) => {
         console.error("Error en el proceso de autenticación:", error);
-        setMessage("No se pudo completar la autenticación. Intenta nuevamente.");
+        if (existingToken) {
+          cleanup(false);
+          router.replace("/dashboard");
+          return;
+        }
         cleanup(true);
         router.replace("/login");
       });
   }, [router]);
 
-  return <p>{message}</p>;
+  return <p>Iniciando sesión...</p>;
 }

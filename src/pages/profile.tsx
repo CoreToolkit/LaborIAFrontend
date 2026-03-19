@@ -7,9 +7,8 @@ import {
   Calendar, MapPin, Building, Plus, Edit2, Trash2, Star, Trophy, BookOpen
 } from "lucide-react";
 import { useProfile } from "@/hooks/useProfile";
-import { useSession } from "@/hooks/useSession";
 import { Button } from "@/components/ui/button";
-import { Experience, Skill } from "@/types/profile";
+import { Experience, Preferencias, Skill } from "@/types/profile";
 import { EditPersonalInfoModal } from "@/components/EditPersonalInfoModal";
 import { ExperienceModal } from "@/components/ExperienceModal";
 import { SkillModal } from "@/components/SkillModal";
@@ -19,10 +18,11 @@ import {
   hasSkippedOnboarding as hasSkippedOnboardingFlag,
   profileNeedsOnboarding,
 } from "@/utils/profileOnboarding";
+import PrivateRoute from "@/components/PrivateRoute";
+import { clearProvider, clearTokens, getAccessToken } from "@/utils/session";
 
-export default function ProfilePage() {
+function ProfileContent() {
   const router = useRouter();
-  const { isAuthenticated, isLoading: sessionLoading } = useSession();
   const { 
     profile, 
     isLoading, 
@@ -54,19 +54,32 @@ export default function ProfilePage() {
 
   const needsOnboarding = React.useMemo(() => profileNeedsOnboarding(profile), [profile]);
 
-  // Redirigir si no está autenticado
-  React.useEffect(() => {
-    if (!sessionLoading && !isAuthenticated) {
-      router.replace("/login");
-    }
-  }, [isAuthenticated, sessionLoading, router]);
-
   const handleLogout = async () => {
+    const accessToken = getAccessToken();
+
     try {
-      await fetch("/api/auth/logout", { method: "POST" });
-      router.push("/login");
+      if (!accessToken) {
+        clearTokens();
+        clearProvider();
+        router.push('/login');
+        return;
+      }
+
+      const res = await fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      if (!res.ok) {
+        console.error('Logout respondió con error HTTP:', res.status);
+      }
     } catch (error) {
       console.error("Error al cerrar sesión:", error);
+    } finally {
+      clearTokens();
+      clearProvider();
       router.push("/login");
     }
   };
@@ -143,8 +156,8 @@ export default function ProfilePage() {
   const handleSaveExperience = async (data: Experience) => {
     if (experienceMode === 'add') {
       await addExperience(data);
-    } else if (selectedExperience && 'id' in selectedExperience) {
-      await updateExperience((selectedExperience as any).id, data);
+    } else if (selectedExperience?.id) {
+      await updateExperience(selectedExperience.id, data);
     }
   };
 
@@ -169,8 +182,8 @@ export default function ProfilePage() {
   const handleSaveSkill = async (data: Skill) => {
     if (skillMode === 'add') {
       await addSkill(data);
-    } else if (selectedSkill && 'id' in selectedSkill) {
-      await updateSkill((selectedSkill as any).id, data);
+    } else if (selectedSkill?.id) {
+      await updateSkill(selectedSkill.id, data);
     }
   };
 
@@ -184,7 +197,7 @@ export default function ProfilePage() {
     setIsPreferencesModalOpen(true);
   };
 
-  const handleSavePreferences = async (data: any) => {
+  const handleSavePreferences = async (data: Preferencias) => {
     await updatePreferencias(data);
   };
 
@@ -195,23 +208,6 @@ export default function ProfilePage() {
     setHasSkippedOnboarding(false);
     router.push("/Onboarding");
   };
-
-  // Mostrar loading durante la verificación de sesión
-  if (sessionLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Verificando sesión...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // No mostrar nada si no está autenticado (se redirigirá)
-  if (!isAuthenticated) {
-    return null;
-  }
 
   return (
     <>
@@ -596,7 +592,7 @@ export default function ProfilePage() {
                                   </button>
                                   <button 
                                     className="p-1 text-gray-400 hover:text-red-600"
-                                    onClick={() => 'id' in exp && handleDeleteExperience((exp as any).id)}
+                                    onClick={() => exp.id && handleDeleteExperience(exp.id)}
                                     aria-label="Eliminar experiencia"
                                   >
                                     <Trash2 className="w-4 h-4" />
@@ -655,7 +651,7 @@ export default function ProfilePage() {
                                         </button>
                                         <button 
                                           className="p-1 text-gray-400 hover:text-red-600"
-                                          onClick={() => 'id' in skill && handleDeleteSkill((skill as any).id)}
+                                          onClick={() => skill.id && handleDeleteSkill(skill.id)}
                                           aria-label="Eliminar habilidad"
                                         >
                                           <Trash2 className="w-3 h-3" />
@@ -691,7 +687,7 @@ export default function ProfilePage() {
                                     <span>{skill.nombre}</span>
                                     <button 
                                       className="ml-1 text-green-600 hover:text-green-800"
-                                      onClick={() => 'id' in skill && handleDeleteSkill((skill as any).id)}
+                                      onClick={() => skill.id && handleDeleteSkill(skill.id)}
                                       aria-label="Eliminar habilidad"
                                     >
                                       <Trash2 className="w-3 h-3" />
@@ -960,5 +956,13 @@ export default function ProfilePage() {
         )}
       </div>
     </>
+  );
+}
+
+export default function ProfilePage() {
+  return (
+    <PrivateRoute>
+      <ProfileContent />
+    </PrivateRoute>
   );
 }

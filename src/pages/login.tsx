@@ -1,15 +1,43 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
 import { LoginForm } from '@/components/LoginForm';
 import { useSession } from '@/hooks/useSession';
+import { getAccessToken } from '@/utils/session';
+
+const seededRandom = (seed: number): number => {
+  const value = Math.sin(seed * 9999) * 10000;
+  return value - Math.floor(value);
+};
 
 export default function Login() {
   const router = useRouter();
   const { isAuthenticated, isLoading } = useSession();
 
+  const horizontalLines = useMemo(
+    () =>
+      Array.from({ length: 30 }, (_, i) => ({
+        key: `h-${i}`,
+        top: `${seededRandom(i + 1) * 100}%`,
+        animationDuration: `${2 + seededRandom(i + 101) * 3}s`,
+        animationDelay: `${seededRandom(i + 201) * 2}s`,
+      })),
+    []
+  );
+
+  const verticalLines = useMemo(
+    () =>
+      Array.from({ length: 30 }, (_, i) => ({
+        key: `v-${i}`,
+        left: `${seededRandom(i + 301) * 100}%`,
+        animationDuration: `${2 + seededRandom(i + 401) * 3}s`,
+        animationDelay: `${seededRandom(i + 501) * 2}s`,
+      })),
+    []
+  );
+
   useEffect(() => {
-    if (!isLoading && isAuthenticated) {
+    if (!isLoading && (isAuthenticated || Boolean(getAccessToken()))) {
       router.replace("/dashboard");
     }
   }, [isAuthenticated, isLoading, router]);
@@ -52,30 +80,30 @@ export default function Login() {
             </div>
             {/* Líneas animadas */}
             <div className="absolute inset-0 overflow-hidden">
-              {[...Array(30)].map((_, i) => (
+              {horizontalLines.map((line) => (
                 <div
-                  key={i}
+                  key={line.key}
                   className="absolute h-0.5 bg-linear-to-r from-transparent via-white to-transparent opacity-70"
                   style={{
-                    top: `${Math.random() * 100}%`,
+                    top: line.top,
                     left: 0,
                     right: 0,
-                    animation: `slideRight ${2 + Math.random() * 3}s linear infinite`,
-                    animationDelay: `${Math.random() * 2}s`,
+                    animation: `slideRight ${line.animationDuration} linear infinite`,
+                    animationDelay: line.animationDelay,
                     boxShadow: '0 0 8px rgba(255, 255, 255, 0.5)',
                   }}
                 />
               ))}
-              {[...Array(30)].map((_, i) => (
+              {verticalLines.map((line) => (
                 <div
-                  key={`v-${i}`}
+                  key={line.key}
                   className="absolute w-0.5 bg-linear-to-b from-transparent via-white to-transparent opacity-60"
                   style={{
-                    left: `${Math.random() * 100}%`,
+                    left: line.left,
                     top: 0,
                     bottom: 0,
-                    animation: `slideDown ${2 + Math.random() * 3}s linear infinite`,
-                    animationDelay: `${Math.random() * 2}s`,
+                    animation: `slideDown ${line.animationDuration} linear infinite`,
+                    animationDelay: line.animationDelay,
                     boxShadow: '0 0 8px rgba(255, 255, 255, 0.5)',
                   }}
                 />

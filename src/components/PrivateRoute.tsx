@@ -1,6 +1,7 @@
 import { useEffect, ReactNode } from "react";
 import { useRouter } from "next/router";
 import { useSession } from "@/hooks/useSession";
+import { getAccessToken } from "@/utils/session";
 
 type PrivateRouteProps = {
   children: ReactNode;
@@ -9,15 +10,17 @@ type PrivateRouteProps = {
 const PrivateRoute = ({ children }: PrivateRouteProps) => {
   const router = useRouter();
   const { isAuthenticated, isLoading } = useSession();
+  const hasToken = typeof window !== "undefined" && Boolean(getAccessToken());
+  const canAccess = isAuthenticated || hasToken;
 
   useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
+    if (!isLoading && !canAccess) {
       router.replace("/login");
     }
-  }, [isAuthenticated, isLoading, router]);
+  }, [canAccess, isLoading, router]);
 
   if (isLoading) return null;
-  if (!isAuthenticated) return null;
+  if (!canAccess) return null;
 
   return <>{children}</>;
 };
