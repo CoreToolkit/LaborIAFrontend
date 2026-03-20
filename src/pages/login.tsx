@@ -1,40 +1,72 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect } from 'react';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
 import { LoginForm } from '@/components/LoginForm';
 import { useSession } from '@/hooks/useSession';
 import { getAccessToken } from '@/utils/session';
 
-const seededRandom = (seed: number): number => {
-  const value = Math.sin(seed * 9999) * 10000;
-  return value - Math.floor(value);
-};
+const HORIZONTAL_TOP_CLASSES = [
+  'top-[3%]',
+  'top-[8%]',
+  'top-[12%]',
+  'top-[17%]',
+  'top-[23%]',
+  'top-[29%]',
+  'top-[34%]',
+  'top-[41%]',
+  'top-[47%]',
+  'top-[53%]',
+  'top-[59%]',
+  'top-[66%]',
+  'top-[72%]',
+  'top-[79%]',
+  'top-[86%]',
+  'top-[93%]',
+];
+
+const VERTICAL_LEFT_CLASSES = [
+  'left-[2%]',
+  'left-[7%]',
+  'left-[13%]',
+  'left-[18%]',
+  'left-[24%]',
+  'left-[31%]',
+  'left-[37%]',
+  'left-[43%]',
+  'left-[49%]',
+  'left-[55%]',
+  'left-[61%]',
+  'left-[67%]',
+  'left-[73%]',
+  'left-[79%]',
+  'left-[85%]',
+  'left-[92%]',
+];
+
+const DURATION_CLASSES = [
+  '[animation-duration:2s]',
+  '[animation-duration:2.6s]',
+  '[animation-duration:3.2s]',
+  '[animation-duration:3.8s]',
+  '[animation-duration:4.4s]',
+];
+
+const DELAY_CLASSES = [
+  '[animation-delay:0s]',
+  '[animation-delay:0.25s]',
+  '[animation-delay:0.5s]',
+  '[animation-delay:0.75s]',
+  '[animation-delay:1s]',
+  '[animation-delay:1.25s]',
+  '[animation-delay:1.5s]',
+  '[animation-delay:1.75s]',
+];
+
+const MATRIX_LINE_COUNT = 30;
 
 export default function Login() {
   const router = useRouter();
   const { isAuthenticated, isLoading } = useSession();
-
-  const horizontalLines = useMemo(
-    () =>
-      Array.from({ length: 30 }, (_, i) => ({
-        key: `h-${i}`,
-        top: `${seededRandom(i + 1) * 100}%`,
-        animationDuration: `${2 + seededRandom(i + 101) * 3}s`,
-        animationDelay: `${seededRandom(i + 201) * 2}s`,
-      })),
-    []
-  );
-
-  const verticalLines = useMemo(
-    () =>
-      Array.from({ length: 30 }, (_, i) => ({
-        key: `v-${i}`,
-        left: `${seededRandom(i + 301) * 100}%`,
-        animationDuration: `${2 + seededRandom(i + 401) * 3}s`,
-        animationDelay: `${seededRandom(i + 501) * 2}s`,
-      })),
-    []
-  );
 
   useEffect(() => {
     if (!isLoading && (isAuthenticated || Boolean(getAccessToken()))) {
@@ -61,51 +93,19 @@ export default function Login() {
         <div className="hidden lg:flex flex-1 relative overflow-hidden bg-linear-to-br from-blue-600 via-indigo-600 to-purple-600">
           {/* Efecto de líneas de matriz */}
           <div className="absolute inset-0 opacity-30">
-            <div className="absolute inset-0" style={{
-              backgroundImage: `repeating-linear-gradient(
-                0deg,
-                transparent,
-                transparent 2px,
-                rgba(255, 255, 255, 0.08) 2px,
-                rgba(255, 255, 255, 0.08) 4px
-              ),
-              repeating-linear-gradient(
-                90deg,
-                transparent,
-                transparent 2px,
-                rgba(255, 255, 255, 0.08) 2px,
-                rgba(255, 255, 255, 0.08) 4px
-              )`
-            }}>
-            </div>
+            <div className="absolute inset-0 matrix-grid" />
             {/* Líneas animadas */}
             <div className="absolute inset-0 overflow-hidden">
-              {horizontalLines.map((line) => (
+              {Array.from({ length: MATRIX_LINE_COUNT }, (_, index) => (
                 <div
-                  key={line.key}
-                  className="absolute h-0.5 bg-linear-to-r from-transparent via-white to-transparent opacity-70"
-                  style={{
-                    top: line.top,
-                    left: 0,
-                    right: 0,
-                    animation: `slideRight ${line.animationDuration} linear infinite`,
-                    animationDelay: line.animationDelay,
-                    boxShadow: '0 0 8px rgba(255, 255, 255, 0.5)',
-                  }}
+                  key={`h-${index}`}
+                  className={`absolute h-0.5 left-0 right-0 bg-linear-to-r from-transparent via-white to-transparent opacity-70 matrix-line-shadow matrix-horizontal ${HORIZONTAL_TOP_CLASSES[index % HORIZONTAL_TOP_CLASSES.length]} ${DURATION_CLASSES[index % DURATION_CLASSES.length]} ${DELAY_CLASSES[index % DELAY_CLASSES.length]}`}
                 />
               ))}
-              {verticalLines.map((line) => (
+              {Array.from({ length: MATRIX_LINE_COUNT }, (_, index) => (
                 <div
-                  key={line.key}
-                  className="absolute w-0.5 bg-linear-to-b from-transparent via-white to-transparent opacity-60"
-                  style={{
-                    left: line.left,
-                    top: 0,
-                    bottom: 0,
-                    animation: `slideDown ${line.animationDuration} linear infinite`,
-                    animationDelay: line.animationDelay,
-                    boxShadow: '0 0 8px rgba(255, 255, 255, 0.5)',
-                  }}
+                  key={`v-${index}`}
+                  className={`absolute w-0.5 top-0 bottom-0 bg-linear-to-b from-transparent via-white to-transparent opacity-60 matrix-line-shadow matrix-vertical ${VERTICAL_LEFT_CLASSES[index % VERTICAL_LEFT_CLASSES.length]} ${DURATION_CLASSES[(index + 1) % DURATION_CLASSES.length]} ${DELAY_CLASSES[(index + 2) % DELAY_CLASSES.length]}`}
                 />
               ))}
             </div>
@@ -129,6 +129,40 @@ export default function Login() {
       </div>
 
       <style jsx>{`
+        .matrix-grid {
+          background-image:
+            repeating-linear-gradient(
+              0deg,
+              transparent,
+              transparent 2px,
+              rgba(255, 255, 255, 0.08) 2px,
+              rgba(255, 255, 255, 0.08) 4px
+            ),
+            repeating-linear-gradient(
+              90deg,
+              transparent,
+              transparent 2px,
+              rgba(255, 255, 255, 0.08) 2px,
+              rgba(255, 255, 255, 0.08) 4px
+            );
+        }
+
+        .matrix-line-shadow {
+          box-shadow: 0 0 8px rgba(255, 255, 255, 0.5);
+        }
+
+        .matrix-horizontal {
+          animation-name: slideRight;
+          animation-timing-function: linear;
+          animation-iteration-count: infinite;
+        }
+
+        .matrix-vertical {
+          animation-name: slideDown;
+          animation-timing-function: linear;
+          animation-iteration-count: infinite;
+        }
+
         @keyframes slideRight {
           from {
             transform: translateX(-100%);

@@ -1,5 +1,6 @@
 import React from "react";
 import Head from "next/head";
+import Image from "next/image";
 import { useRouter } from "next/router";
 import { 
   User, Mail, Globe, LogOut, RefreshCw, AlertCircle, Briefcase, 
@@ -122,6 +123,27 @@ function ProfileContent() {
     setImageError(true);
   };
 
+  const getSkillLevelProgress = (level: string): number => {
+    const normalizedLevel = level.trim().toLowerCase();
+
+    if (normalizedLevel === 'basico' || normalizedLevel === 'básico') {
+      return 33;
+    }
+
+    if (normalizedLevel === 'intermedio') {
+      return 66;
+    }
+
+    return 100;
+  };
+
+  const getAchievementProgressValue = (actual: number, required: number): number => {
+    const safeRequired = Number.isFinite(required) && required > 0 ? required : 1;
+    const safeActual = Number.isFinite(actual) && actual > 0 ? actual : 0;
+
+    return Math.min(safeActual, safeRequired);
+  };
+
   // Modal handlers
   const handleEditPersonalInfo = () => {
     setIsPersonalInfoModalOpen(true);
@@ -194,6 +216,11 @@ function ProfileContent() {
   };
 
   const handleEditPreferences = () => {
+    setIsPreferencesModalOpen(true);
+  };
+
+  const handleOpenSettings = () => {
+    setActiveTab('preferences');
     setIsPreferencesModalOpen(true);
   };
 
@@ -299,12 +326,16 @@ function ProfileContent() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
                       {imageSrc && !imageError ? (
-                        <img
+                        <Image
+                          loader={({ src }) => src}
                           src={imageSrc}
                           alt={profile.nombre}
+                          width={80}
+                          height={80}
                           className="w-20 h-20 rounded-full border-4 border-white shadow-lg object-cover bg-white"
-                          onError={handleImageError}
+                          onError={() => handleImageError()}
                           referrerPolicy="no-referrer"
+                          unoptimized
                         />
                       ) : (
                         <div className="w-20 h-20 rounded-full bg-white flex items-center justify-center border-4 border-white shadow-lg">
@@ -658,18 +689,12 @@ function ProfileContent() {
                                         </button>
                                       </div>
                                     </div>
-                                    <div className="w-full bg-gray-200 rounded-full h-2">
-                                      <div 
-                                        className="bg-blue-600 h-2 rounded-full transition-all"
-                                        style={{ 
-                                          width: `${
-                                            skill.nivel === 'Basico' ? '33%' :
-                                            skill.nivel === 'Intermedio' ? '66%' :
-                                            '100%'
-                                          }` 
-                                        }}
-                                      />
-                                    </div>
+                                    <progress
+                                      className="h-2 w-full overflow-hidden rounded-full appearance-none [&::-webkit-progress-bar]:rounded-full [&::-webkit-progress-bar]:bg-gray-200 [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-blue-600 [&::-moz-progress-bar]:rounded-full [&::-moz-progress-bar]:bg-blue-600"
+                                      max={100}
+                                      value={getSkillLevelProgress(skill.nivel)}
+                                      aria-label={`Nivel de ${skill.nombre}`}
+                                    />
                                   </div>
                                 ))}
                             </div>
@@ -775,12 +800,12 @@ function ProfileContent() {
                                       )}
                                       {!logro.desbloqueado && (
                                         <div className="mt-2">
-                                          <div className="w-full bg-gray-200 rounded-full h-1.5">
-                                            <div 
-                                              className="bg-blue-600 h-1.5 rounded-full"
-                                              style={{ width: `${(logro.progresoActual / logro.progresoRequerido) * 100}%` }}
-                                            />
-                                          </div>
+                                          <progress
+                                            className="h-1.5 w-full overflow-hidden rounded-full appearance-none [&::-webkit-progress-bar]:rounded-full [&::-webkit-progress-bar]:bg-gray-200 [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-blue-600 [&::-moz-progress-bar]:rounded-full [&::-moz-progress-bar]:bg-blue-600"
+                                            max={Math.max(logro.progresoRequerido, 1)}
+                                            value={getAchievementProgressValue(logro.progresoActual, logro.progresoRequerido)}
+                                            aria-label={`Progreso de ${logro.nombre}`}
+                                          />
                                           <p className="text-xs text-gray-600 mt-1">
                                             {logro.progresoActual} / {logro.progresoRequerido}
                                           </p>
@@ -891,7 +916,7 @@ function ProfileContent() {
                       Completar Onboarding
                     </Button>
                   )}
-                  <Button variant="outline" size="sm">
+                  <Button variant="outline" size="sm" onClick={handleOpenSettings}>
                     <Settings className="w-4 h-4 mr-2" />
                     Configuración
                   </Button>
