@@ -6,18 +6,14 @@ export interface SkillGap {
 export interface RoleRecommendation {
   role_id: string;
   role_name: string;
-  match_score: number;
-  has_match_score?: boolean;
-  demand_score?: number;
-  description: string | null;
-  category: string;
-  seniority_level?: string | null;
-  min_english_level?: string | null;
-  skill_gaps: SkillGap[];
-  experience_gap?: string | null;
-  salary_min?: number;
-  salary_max?: number;
-  salary_currency?: string;
+  total_score: number;
+  category: "tech" | "data" | "design";
+  seniority_level: "junior" | "mid" | "senior";
+  min_english_level: "A1" | "A2" | "B1" | "B2" | "C1" | "C2";
+  estimated_salary_min_cop?: number;
+  estimated_salary_max_cop?: number;
+  skill_gaps?: SkillGap[];
+  description?: string | null;
 }
 
 export interface RoleSkill {

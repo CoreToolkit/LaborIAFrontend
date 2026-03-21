@@ -78,45 +78,37 @@ const parseRoleRecommendation = (value: unknown): RoleRecommendation | null => {
     return null;
   }
 
-  const hasMatchScore =
-    value.match_score !== undefined &&
-    value.match_score !== null &&
-    !(typeof value.match_score === "string" && value.match_score.trim() === "");
+  const roleId = toText(value.role_id).trim();
+  const roleName = toText(value.role_name).trim();
+  const totalScore = toNumber(value.total_score, 0);
+  const category = toText(value.category).trim();
+  const seniorityLevel = toText(value.seniority_level).trim();
+  const minEnglishLevel = toText(value.min_english_level).trim();
 
-  const roleId = toText(value.role_id || value.id).trim();
-  const roleName = toText(value.role_name || value.name).trim();
-
-  if (!roleId || !roleName) {
+  if (!roleId || !roleName || !category || !seniorityLevel || !minEnglishLevel) {
     return null;
   }
 
-  const rawSkillGaps = Array.isArray(value.skill_gaps) ? value.skill_gaps : [];
-  const skillGaps = rawSkillGaps
-    .map(parseSkillGap)
-    .filter((item): item is SkillGap => item !== null)
-    .sort((a, b) => b.importance_weight - a.importance_weight);
+  const skillGapsRaw = Array.isArray(value.skill_gaps) ? value.skill_gaps : [];
+  const skillGaps =
+    skillGapsRaw.length > 0
+      ? skillGapsRaw
+          .map(parseSkillGap)
+          .filter((item): item is SkillGap => item !== null)
+          .sort((a, b) => b.importance_weight - a.importance_weight)
+      : undefined;
 
   return {
     role_id: roleId,
     role_name: roleName,
-    match_score: clampPercentage(toNumber(value.match_score, 0)),
-    has_match_score: hasMatchScore,
-    demand_score:
-      toNumber(value.demand_score ?? value.market_demand_score ?? value.role_demand_score, 0) ||
-      undefined,
-    description: toNullableText(value.description),
-    category: toText(value.category, "general"),
-    seniority_level: toNullableText(value.seniority_level),
-    min_english_level: toNullableText(value.min_english_level),
-    skill_gaps: skillGaps,
-    experience_gap: toNullableText(value.experience_gap),
-    salary_min:
-      toNumber(value.salary_min ?? value.min_salary ?? value.estimated_salary_min_cop, 0) ||
-      undefined,
-    salary_max:
-      toNumber(value.salary_max ?? value.max_salary ?? value.estimated_salary_max_cop, 0) ||
-      undefined,
-    salary_currency: toText(value.salary_currency ?? value.currency).trim() || undefined,
+    total_score: clampPercentage(totalScore),
+    category: category as "tech" | "data" | "design",
+    seniority_level: seniorityLevel as "junior" | "mid" | "senior",
+    min_english_level: minEnglishLevel as "A1" | "A2" | "B1" | "B2" | "C1" | "C2",
+    estimated_salary_min_cop: toNumber(value.estimated_salary_min_cop, 0) || undefined,
+    estimated_salary_max_cop: toNumber(value.estimated_salary_max_cop, 0) || undefined,
+    ...(skillGaps ? { skill_gaps: skillGaps } : {}),
+    ...(value.description ? { description: toNullableText(value.description) } : {}),
   };
 };
 
@@ -229,32 +221,24 @@ export const getRecommendations = async (token: string): Promise<RoleRecommendat
   if (!response.ok) {
     if (response.status === 404) {
       const rolesAsFallback = await getRoles(token, { page: 1, size: 10, active: true });
-
-      return rolesAsFallback
-        .map((role) => ({
-          ...role,
-          has_match_score: false,
-        }))
-        .slice(0, 10);
+      return rolesAsFallback.slice(0, 10);
     }
 
     throw new Error(await parseErrorMessage(response, "No se pudieron cargar las recomendaciones."));
   }
 
   const payload = (await response.json()) as unknown;
-  const list = Array.isArray(payload)
-    ? payload
-    : isObject(payload) && Array.isArray(payload.items)
-      ? payload.items
-      : isObject(payload) && Array.isArray(payload.recommendations)
-        ? payload.recommendations
-        : [];
+  let list: unknown[] = [];
+
+  if (isObject(payload) && Array.isArray(payload.recommendations)) {
+    list = payload.recommendations;
+  } else if (Array.isArray(payload)) {
+    list = payload;
+  }
 
   return list
     .map(parseRoleRecommendation)
-    .filter((item): item is RoleRecommendation => item !== null)
-    .sort((a, b) => b.match_score - a.match_score)
-    .slice(0, 10);
+    .filter((item): item is RoleRecommendation => item !== null);
 };
 
 export const recalculateRecommendations = async (token: string): Promise<void> => {

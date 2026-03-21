@@ -24,11 +24,4 @@ describe("MatchProgressBar", () => {
 
     expect(screen.getByText(/Tu match score considera:/i)).toBeInTheDocument();
   });
-
-  it("shows pending state when score is not available yet", () => {
-    render(<MatchProgressBar score={0} hasScore={false} />);
-
-    expect(screen.getByText("Match pendiente")).toBeInTheDocument();
-    expect(screen.getByText("Pendiente")).toBeInTheDocument();
-  });
 });

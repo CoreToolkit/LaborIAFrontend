@@ -32,10 +32,10 @@ const sortRecommendations = (
       return role.demand_score;
     }
 
-    return role.skill_gaps.reduce(
+    return role.skill_gaps ? role.skill_gaps.reduce(
       (total, gap) => total + Math.max(0, gap.importance_weight || 0),
       0
-    );
+    ) : 0;
   };
 
   if (sortBy === "name-asc") {
@@ -44,8 +44,8 @@ const sortRecommendations = (
 
   if (sortBy === "salary-desc") {
     return next.sort((a, b) => {
-      const salaryA = a.salary_max ?? a.salary_min ?? -1;
-      const salaryB = b.salary_max ?? b.salary_min ?? -1;
+      const salaryA = a.estimated_salary_max_cop ?? a.estimated_salary_min_cop ?? -1;
+      const salaryB = b.estimated_salary_max_cop ?? b.estimated_salary_min_cop ?? -1;
 
       return salaryB - salaryA;
     });
@@ -64,17 +64,19 @@ const sortRecommendations = (
     });
   }
 
-  return next.sort((a, b) => b.match_score - a.match_score);
+  return next.sort((a, b) => b.total_score - a.total_score);
 };
 
 const getMostDemandedSkills = (roles: RoleRecommendation[]): string[] => {
   const scoreBySkill = new Map<string, number>();
 
   roles.forEach((role) => {
-    role.skill_gaps.forEach((gap) => {
-      const current = scoreBySkill.get(gap.skill_name) || 0;
-      scoreBySkill.set(gap.skill_name, current + Math.max(1, gap.importance_weight));
-    });
+    if (role.skill_gaps) {
+      role.skill_gaps.forEach((gap) => {
+        const current = scoreBySkill.get(gap.skill_name) || 0;
+        scoreBySkill.set(gap.skill_name, current + Math.max(1, gap.importance_weight));
+      });
+    }
   });
 
   return [...scoreBySkill.entries()]
@@ -149,12 +151,7 @@ export function DashboardContent() {
       const roles = await getRoles(token, { page: 1, size: 20, active: true });
 
       if (roles.length > 0) {
-        setPreviewRoles(
-          roles.map((role) => ({
-            ...role,
-            has_match_score: false,
-          }))
-        );
+        setPreviewRoles(roles);
         setPreviewSource("roles-api");
         return;
       }
@@ -273,7 +270,7 @@ export function DashboardContent() {
 
   const salarySortAvailable = React.useMemo(() => {
     return effectiveRecommendations.some(
-      (item) => typeof item.salary_max === "number" || typeof item.salary_min === "number"
+      (item) => typeof item.estimated_salary_max_cop === "number" || typeof item.estimated_salary_min_cop === "number"
     );
   }, [effectiveRecommendations]);
 
@@ -292,16 +289,10 @@ export function DashboardContent() {
 
   const showRecommendations = (!isRecommendationsLoading && !recommendationsError && recommendations.length > 0) || showPreview;
 
-  const isUsingRolesFallback = React.useMemo(() => {
-    return effectiveRecommendations.length > 0 && effectiveRecommendations.every((item) => item.has_match_score === false);
-  }, [effectiveRecommendations]);
-
   const allMatchesUnderThirty = React.useMemo(() => {
-    const scoredRecommendations = effectiveRecommendations.filter((item) => item.has_match_score !== false);
-
     return (
-      scoredRecommendations.length > 0 &&
-      scoredRecommendations.every((item) => item.match_score < 30)
+      effectiveRecommendations.length > 0 &&
+      effectiveRecommendations.every((item) => item.total_score < 30)
     );
   }, [effectiveRecommendations]);
 
@@ -518,17 +509,6 @@ export function DashboardContent() {
 
           {showRecommendations && (
             <section className="space-y-5">
-              {isUsingRolesFallback && (
-                <div className="rounded-xl border border-blue-200 bg-blue-50 p-5">
-                  <p className="font-semibold text-blue-800">
-                    Mostrando catalogo de roles como base mientras el endpoint de recomendaciones se despliega.
-                  </p>
-                  <p className="mt-1 text-sm text-blue-700">
-                    Ya puedes validar estructura de cards, filtros y detalle usando datos reales de roles.
-                  </p>
-                </div>
-              )}
-
               {allMatchesUnderThirty && (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 p-5">
                   <p className="font-semibold text-amber-800">

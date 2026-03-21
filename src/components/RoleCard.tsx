@@ -16,10 +16,9 @@ const toCategoryLabel = (category: string): string => {
 };
 
 export function RoleCard({ role, onStartInterview, onViewDetail }: RoleCardProps) {
-  const hasMatchScore = role.has_match_score !== false;
-  const topSkillGaps = [...role.skill_gaps]
+  const topSkillGaps = role.skill_gaps ? [...role.skill_gaps]
     .sort((a, b) => b.importance_weight - a.importance_weight)
-    .slice(0, 3);
+    .slice(0, 3) : [];
 
   return (
     <article
@@ -52,12 +51,8 @@ export function RoleCard({ role, onStartInterview, onViewDetail }: RoleCardProps
       </div>
 
       <div className="mb-4">
-        <MatchProgressBar score={role.match_score} hasScore={hasMatchScore} />
+        <MatchProgressBar score={role.total_score} />
       </div>
-
-      <p className="mb-4 text-sm text-gray-600">
-        {role.description || "Rol base cargado desde catalogo de roles."}
-      </p>
 
       <div className="mb-5">
         <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -73,7 +68,7 @@ export function RoleCard({ role, onStartInterview, onViewDetail }: RoleCardProps
             ))
           ) : (
             <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
-              {hasMatchScore ? "Sin brechas criticas detectadas" : "Brechas pendientes de calculo"}
+              Sin brechas críticas detectadas
             </span>
           )}
         </div>

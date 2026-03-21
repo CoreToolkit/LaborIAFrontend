@@ -5,7 +5,6 @@ import { cn } from "@/utils/cn";
 
 interface MatchProgressBarProps {
   score: number;
-  hasScore?: boolean;
 }
 
 const getToneClass = (score: number): string => {
@@ -29,24 +28,20 @@ const getLabel = (score: number): string => {
   return "Alto";
 };
 
-export function MatchProgressBar({ score, hasScore = true }: MatchProgressBarProps) {
+export function MatchProgressBar({ score }: MatchProgressBarProps) {
   const [isTooltipOpen, setIsTooltipOpen] = React.useState(false);
   const clampedScore = Math.max(0, Math.min(100, Number.isFinite(score) ? score : 0));
   const shownScore = Number(clampedScore.toFixed(1));
-  const filledSegments = hasScore
-    ? Math.max(0, Math.min(20, Math.round((clampedScore / 100) * 20)))
-    : 0;
-  const toneClass = hasScore ? getToneClass(clampedScore) : "bg-slate-400";
-  const tooltipText = hasScore
-    ? matchingFactorsExplanation
-    : "El score estara disponible cuando el servicio de matching termine de desplegarse.";
+  const filledSegments = Math.max(0, Math.min(20, Math.round((clampedScore / 100) * 20)));
+  const toneClass = getToneClass(clampedScore);
+  const tooltipText = matchingFactorsExplanation;
 
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold text-gray-900">
-            {hasScore ? `${shownScore}% Match` : "Match pendiente"}
+            {`${shownScore}% Match`}
           </span>
           <div
             className="relative"
@@ -71,10 +66,10 @@ export function MatchProgressBar({ score, hasScore = true }: MatchProgressBarPro
         <span
           className={cn(
             "rounded-full border px-2 py-0.5 text-xs font-semibold",
-            hasScore ? getLabelClass(clampedScore) : "text-slate-700 bg-slate-50 border-slate-200"
+            getLabelClass(clampedScore)
           )}
         >
-          {hasScore ? getLabel(clampedScore) : "Pendiente"}
+          {getLabel(clampedScore)}
         </span>
       </div>
 

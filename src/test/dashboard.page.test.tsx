@@ -43,11 +43,10 @@ const replaceMock = vi.fn();
 const makeRole = (overrides?: Partial<RoleRecommendation>): RoleRecommendation => ({
   role_id: crypto.randomUUID(),
   role_name: "Role",
-  match_score: 50,
-  description: "Role description",
-  category: "backend",
-  seniority_level: "junior",
-  min_english_level: "b1",
+  total_score: 50,
+  category: "tech",
+  seniority_level: "mid",
+  min_english_level: "B2",
   skill_gaps: [],
   ...overrides,
 });
@@ -83,12 +82,12 @@ describe("DashboardContent", () => {
 
   it("renders top 5 roles sorted by match score descending by default", async () => {
     vi.mocked(getRecommendations).mockResolvedValue([
-      makeRole({ role_id: "r1", role_name: "Role 30", match_score: 30 }),
-      makeRole({ role_id: "r2", role_name: "Role 90", match_score: 90 }),
-      makeRole({ role_id: "r3", role_name: "Role 70", match_score: 70 }),
-      makeRole({ role_id: "r4", role_name: "Role 50", match_score: 50 }),
-      makeRole({ role_id: "r5", role_name: "Role 80", match_score: 80 }),
-      makeRole({ role_id: "r6", role_name: "Role 20", match_score: 20 }),
+      makeRole({ role_id: "r1", role_name: "Role 30", total_score: 30 }),
+      makeRole({ role_id: "r2", role_name: "Role 90", total_score: 90 }),
+      makeRole({ role_id: "r3", role_name: "Role 70", total_score: 70 }),
+      makeRole({ role_id: "r4", role_name: "Role 50", total_score: 50 }),
+      makeRole({ role_id: "r5", role_name: "Role 80", total_score: 80 }),
+      makeRole({ role_id: "r6", role_name: "Role 20", total_score: 20 }),
     ]);
 
     render(<DashboardContent />);
@@ -159,9 +158,9 @@ describe("DashboardContent", () => {
     const user = userEvent.setup();
 
     vi.mocked(getRecommendations).mockResolvedValue([
-      makeRole({ role_id: "a", role_name: "Role A", match_score: 60, demand_score: 10 }),
-      makeRole({ role_id: "b", role_name: "Role B", match_score: 55, demand_score: 70 }),
-      makeRole({ role_id: "c", role_name: "Role C", match_score: 80, demand_score: 40 }),
+      makeRole({ role_id: "a", role_name: "Role A", total_score: 60, demand_score: 10 }),
+      makeRole({ role_id: "b", role_name: "Role B", total_score: 55, demand_score: 70 }),
+      makeRole({ role_id: "c", role_name: "Role C", total_score: 80, demand_score: 40 }),
     ]);
 
     render(<DashboardContent />);

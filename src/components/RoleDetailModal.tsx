@@ -155,7 +155,7 @@ export function RoleDetailModal({
               <section>
                 <h4 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">Brechas detectadas</h4>
                 <div className="flex flex-wrap gap-2">
-                  {role.skill_gaps.length > 0 ? (
+                  {role.skill_gaps && role.skill_gaps.length > 0 ? (
                     role.skill_gaps.map((gap) => (
                       <SkillGapBadge key={`${role.role_id}-gap-${gap.skill_name}`} gap={gap} />
                     ))

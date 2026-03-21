@@ -17,11 +17,10 @@ vi.mock("@/utils/session", () => ({
 const fallbackRole: RoleRecommendation = {
   role_id: "role-1",
   role_name: "Backend Developer Jr.",
-  match_score: 65,
-  description: "Fallback role description",
-  category: "backend",
+  total_score: 65,
+  category: "tech",
   seniority_level: "junior",
-  min_english_level: "b1",
+  min_english_level: "B1",
   skill_gaps: [{ skill_name: "FastAPI", importance_weight: 9 }],
 };
 
