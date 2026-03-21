@@ -16,6 +16,31 @@ const toJsonPayload = async (backendResponse: Response): Promise<Record<string, 
   }
 };
 
+const fetchWithFallbackPaths = async (
+  backendUrl: string,
+  paths: string[],
+  init: RequestInit
+): Promise<Response> => {
+  let lastError: unknown = null;
+
+  for (const path of paths) {
+    try {
+      const response = await fetch(`${backendUrl}${path}`, init);
+      if (response.status !== 404) {
+        return response;
+      }
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (lastError) {
+    throw lastError;
+  }
+
+  return fetch(`${backendUrl}${paths[0]}`, init);
+};
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "GET") {
     res.setHeader("Allow", "GET");
@@ -28,12 +53,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const backendResponse = await fetch(`${backendUrl}/api/matching/recommendations`, {
-      method: "GET",
-      headers: {
-        ...(req.headers.authorization ? { Authorization: req.headers.authorization } : {}),
-      },
-    });
+    const backendResponse = await fetchWithFallbackPaths(
+      backendUrl,
+      ["/api/matching/recommendations", "/matching/recommendations"],
+      {
+        method: "GET",
+        headers: {
+          ...(req.headers.authorization ? { Authorization: req.headers.authorization } : {}),
+        },
+      }
+    );
 
     const payload = await toJsonPayload(backendResponse);
     return res.status(backendResponse.status).json(payload);

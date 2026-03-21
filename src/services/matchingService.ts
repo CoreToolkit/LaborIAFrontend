@@ -1,7 +1,7 @@
 import { RoleDetail, RoleRecommendation, RoleSkill, RoleTechnology, SkillGap } from "@/types/matching";
 
 const MATCHING_FACTORS_EXPLANATION =
-  "Tu match score considera: Skills tecnicas (40%), Experiencia laboral (30%), Educacion (20%), Preferencias de trabajo (10%).";
+  "Tu match score considera: Skills tecnicas (50%), Experiencia laboral (25%), Educacion (15%), Preferencias de trabajo (10%).";
 
 const isObject = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null;
@@ -219,11 +219,6 @@ export const getRecommendations = async (token: string): Promise<RoleRecommendat
   });
 
   if (!response.ok) {
-    if (response.status === 404) {
-      const rolesAsFallback = await getRoles(token, { page: 1, size: 10, active: true });
-      return rolesAsFallback.slice(0, 10);
-    }
-
     throw new Error(await parseErrorMessage(response, "No se pudieron cargar las recomendaciones."));
   }
 
@@ -247,11 +242,6 @@ export const recalculateRecommendations = async (token: string): Promise<void> =
   });
 
   if (!response.ok) {
-    if (response.status === 404 || response.status === 501) {
-      // Matching service may still be in deployment; keep the dashboard usable with role fallback.
-      return;
-    }
-
     throw new Error(await parseErrorMessage(response, "No se pudo recalcular el matching."));
   }
 };

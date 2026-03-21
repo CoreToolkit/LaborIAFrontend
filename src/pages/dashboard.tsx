@@ -9,7 +9,6 @@ import { RoleDetailModal } from "@/components/RoleDetailModal";
 import { useProfile } from "@/hooks/useProfile";
 import {
   getRecommendations,
-  getRoles,
   recalculateRecommendations,
 } from "@/services/matchingService";
 import { RoleRecommendation, RoleSortOption } from "@/types/matching";
@@ -19,7 +18,6 @@ import {
 } from "@/utils/profileOnboarding";
 import { clearProvider, clearTokens, getAccessToken } from "@/utils/session";
 import PrivateRoute from "@/components/PrivateRoute";
-import { MOCK_RECOMMENDATIONS } from "@/data/mockRecommendations";
 
 const sortRecommendations = (
   list: RoleRecommendation[],
@@ -88,10 +86,6 @@ export function DashboardContent() {
   const [recommendations, setRecommendations] = React.useState<RoleRecommendation[]>([]);
   const [isRecommendationsLoading, setIsRecommendationsLoading] = React.useState(true);
   const [recommendationsError, setRecommendationsError] = React.useState<string | null>(null);
-  const [showPreview, setShowPreview] = React.useState(false);
-  const [previewRoles, setPreviewRoles] = React.useState<RoleRecommendation[]>([]);
-  const [previewSource, setPreviewSource] = React.useState<"roles-api" | "mock">("mock");
-  const [isPreviewLoading, setIsPreviewLoading] = React.useState(false);
 
   const [selectedCategory, setSelectedCategory] = React.useState("all");
   const [selectedSort, setSelectedSort] = React.useState<RoleSortOption>("match-desc");
@@ -135,36 +129,40 @@ export function DashboardContent() {
     }
   }, []);
 
-  const loadPreviewRoles = React.useCallback(async () => {
+  const initializeRecommendations = React.useCallback(async () => {
+    setIsRecommendationsLoading(true);
+    setRecommendationsError(null);
+
     const token = getAccessToken();
     if (!token) {
-      setPreviewRoles(MOCK_RECOMMENDATIONS);
-      setPreviewSource("mock");
+      setRecommendations([]);
+      setRecommendationsError("Tu sesion expiro. Inicia sesion nuevamente.");
+      setIsRecommendationsLoading(false);
       return;
     }
 
     try {
-      const roles = await getRoles(token, { page: 1, size: 20, active: true });
+      let data = await getRecommendations(token);
 
-      if (roles.length > 0) {
-        setPreviewRoles(roles);
-        setPreviewSource("roles-api");
-        return;
+      if (data.length === 0) {
+        await recalculateRecommendations(token);
+        data = await getRecommendations(token);
       }
+
+      setRecommendations(data);
     } catch (error) {
-      console.error("No se pudo cargar catalogo de roles para vista previa:", error);
+      let message = "No se pudieron cargar los roles recomendados.";
+      if (error instanceof Error) {
+        message = error.message && typeof error.message === "string" && error.message.trim()
+          ? error.message.trim()
+          : message;
+      }
+      setRecommendations([]);
+      setRecommendationsError(message);
+    } finally {
+      setIsRecommendationsLoading(false);
     }
-
-    setPreviewRoles(MOCK_RECOMMENDATIONS);
-    setPreviewSource("mock");
   }, []);
-
-  const handleOpenPreview = React.useCallback(async () => {
-    setIsPreviewLoading(true);
-    await loadPreviewRoles();
-    setShowPreview(true);
-    setIsPreviewLoading(false);
-  }, [loadPreviewRoles]);
 
   React.useEffect(() => {
     if (!isProfileLoading && shouldOpenOnboarding) {
@@ -177,8 +175,8 @@ export function DashboardContent() {
       return;
     }
 
-    void loadRecommendations();
-  }, [isProfileLoading, shouldOpenOnboarding, loadRecommendations]);
+    void initializeRecommendations();
+  }, [isProfileLoading, shouldOpenOnboarding, initializeRecommendations]);
 
   const handleLogout = async () => {
     const accessToken = getAccessToken();
@@ -250,57 +248,47 @@ export function DashboardContent() {
     setSelectedRoleId(null);
   };
 
-  const previewRecommendations = React.useMemo(() => {
-    if (previewRoles.length > 0) {
-      return previewRoles;
-    }
-
-    return MOCK_RECOMMENDATIONS;
-  }, [previewRoles]);
-
-  const effectiveRecommendations = showPreview ? previewRecommendations : recommendations;
-
   const categories = React.useMemo(() => {
-    return [...new Set(effectiveRecommendations.map((item) => item.category).filter(Boolean))].sort();
-  }, [effectiveRecommendations]);
+    return [...new Set(recommendations.map((item) => item.category).filter(Boolean))].sort();
+  }, [recommendations]);
 
   const salarySortAvailable = React.useMemo(() => {
-    return effectiveRecommendations.some(
+    return recommendations.some(
       (item) => typeof item.estimated_salary_max_cop === "number" || typeof item.estimated_salary_min_cop === "number"
     );
-  }, [effectiveRecommendations]);
+  }, [recommendations]);
 
   const filteredAndSortedRecommendations = React.useMemo(() => {
     const filtered =
       selectedCategory === "all"
-        ? effectiveRecommendations
-        : effectiveRecommendations.filter((item) => item.category === selectedCategory);
+        ? recommendations
+        : recommendations.filter((item) => item.category === selectedCategory);
 
     return sortRecommendations(filtered, selectedSort);
-  }, [effectiveRecommendations, selectedCategory, selectedSort]);
+  }, [recommendations, selectedCategory, selectedSort]);
 
   const visibleRecommendations = React.useMemo(() => {
     return filteredAndSortedRecommendations.slice(0, 5);
   }, [filteredAndSortedRecommendations]);
 
-  const showRecommendations = (!isRecommendationsLoading && !recommendationsError && recommendations.length > 0) || showPreview;
+  const showRecommendations = !isRecommendationsLoading && !recommendationsError && recommendations.length > 0;
 
   const allMatchesUnderThirty = React.useMemo(() => {
     return (
-      effectiveRecommendations.length > 0 &&
-      effectiveRecommendations.every((item) => item.total_score < 30)
+      recommendations.length > 0 &&
+      recommendations.every((item) => item.total_score < 30)
     );
-  }, [effectiveRecommendations]);
+  }, [recommendations]);
 
   const suggestedSkills = React.useMemo(() => {
-    return getMostDemandedSkills(effectiveRecommendations);
-  }, [effectiveRecommendations]);
+    return getMostDemandedSkills(recommendations);
+  }, [recommendations]);
 
   const selectedRole = React.useMemo(() => {
     if (!selectedRoleId) return null;
 
-    return effectiveRecommendations.find((item) => item.role_id === selectedRoleId) || null;
-  }, [effectiveRecommendations, selectedRoleId]);
+    return recommendations.find((item) => item.role_id === selectedRoleId) || null;
+  }, [recommendations, selectedRoleId]);
 
   if (isProfileLoading) {
     return (
@@ -373,32 +361,6 @@ export function DashboardContent() {
         </header>
 
         <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-          {showPreview && (
-            <section className="mb-6 rounded-xl border border-blue-200 bg-blue-50 p-4">
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex items-start gap-3">
-                  <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
-                  <div>
-                    <p className="font-semibold text-blue-900">Modo Vista Previa</p>
-                    <p className="text-sm text-blue-700 mt-1">
-                      {previewSource === "roles-api"
-                        ? "Mostrando roles reales guardados en base de datos. Esta vista es solo de demostracion visual."
-                        : "Mostrando datos mock de demostracion mientras termina la integracion del backend."}
-                    </p>
-                  </div>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowPreview(false)}
-                  className="text-blue-600 border-blue-200 hover:bg-blue-100"
-                >
-                  Cerrar
-                </Button>
-              </div>
-            </section>
-          )}
-
           <section className="mb-6 rounded-xl border border-blue-100 bg-gradient-to-r from-blue-600 to-cyan-600 p-6 text-white shadow-sm">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
@@ -449,7 +411,7 @@ export function DashboardContent() {
             </section>
           )}
 
-          {!isRecommendationsLoading && recommendationsError && !showPreview && (
+          {!isRecommendationsLoading && recommendationsError && (
             <section className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">
               <div className="flex items-start gap-3">
                 <AlertCircle className="h-5 w-5 flex-shrink-0 mt-0.5" />
@@ -460,18 +422,10 @@ export function DashboardContent() {
                     <Button 
                       className="mt-0" 
                       variant="outline" 
-                      onClick={() => void loadRecommendations()}
+                      onClick={() => void initializeRecommendations()}
                     >
                       <RefreshCw className="w-4 h-4 mr-2" />
                       Reintentar
-                    </Button>
-                    <Button 
-                      className="mt-0 bg-blue-600 text-white hover:bg-blue-700" 
-                      onClick={() => void handleOpenPreview()}
-                      disabled={isPreviewLoading}
-                    >
-                      <RefreshCw className={`w-4 h-4 mr-2 ${isPreviewLoading ? "animate-spin" : ""}`} />
-                      {isPreviewLoading ? "Cargando vista previa..." : "Ver Vista Previa"}
                     </Button>
                   </div>
                 </div>
@@ -479,25 +433,20 @@ export function DashboardContent() {
             </section>
           )}
 
-          {!isRecommendationsLoading && !recommendationsError && recommendations.length === 0 && !showPreview && (
+          {!isRecommendationsLoading && !recommendationsError && recommendations.length === 0 && (
             <section className="rounded-xl border border-gray-200 bg-white p-8 text-center shadow-sm">
               <BriefcaseBusiness className="mx-auto mb-3 h-12 w-12 text-gray-400" />
               <h2 className="text-lg font-semibold text-gray-900">Aun no hay recomendaciones</h2>
               <p className="mt-2 text-sm text-gray-600">
-                Completa tu perfil para calcular roles recomendados en base a tus habilidades.
+                Ejecutamos el matching automaticamente, pero aun no hay resultados para mostrar.
               </p>
               <div className="mt-5 flex items-center justify-center gap-3">
                 <Button onClick={() => router.push("/Onboarding")}>Complete Profile</Button>
-                <Button variant="outline" onClick={() => void loadRecommendations()}>
-                  Reintentar
+                <Button variant="outline" onClick={() => void handleRecalculate()}>
+                  Calcular Matching
                 </Button>
-                <Button
-                  className="bg-blue-600 text-white hover:bg-blue-700"
-                  onClick={() => void handleOpenPreview()}
-                  disabled={isPreviewLoading}
-                >
-                  <RefreshCw className={`w-4 h-4 mr-2 ${isPreviewLoading ? "animate-spin" : ""}`} />
-                  {isPreviewLoading ? "Cargando vista previa..." : "Ver Vista Previa"}
+                <Button variant="outline" onClick={() => void initializeRecommendations()}>
+                  Reintentar
                 </Button>
               </div>
             </section>

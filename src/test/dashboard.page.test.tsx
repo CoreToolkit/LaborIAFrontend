@@ -103,6 +103,20 @@ describe("DashboardContent", () => {
     expect(roleHeadings).toEqual(["Role 90", "Role 80", "Role 70", "Role 50", "Role 30"]);
   });
 
+  it("recalculates matching when cached recommendations are empty", async () => {
+    vi.mocked(getRecommendations)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        makeRole({ role_id: "post-get-role", role_name: "Calculated Role", total_score: 74 }),
+      ]);
+
+    render(<DashboardContent />);
+
+    expect(await screen.findByRole("heading", { name: "Calculated Role" })).toBeInTheDocument();
+    expect(recalculateRecommendations).toHaveBeenCalledTimes(1);
+    expect(getRecommendations).toHaveBeenCalledTimes(2);
+  });
+
   it("filters roles by selected category", async () => {
     const user = userEvent.setup();
 
