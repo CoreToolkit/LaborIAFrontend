@@ -107,7 +107,7 @@ describe("DashboardContent", () => {
     const user = userEvent.setup();
 
     vi.mocked(getRecommendations).mockResolvedValue([
-      makeRole({ role_id: "b1", role_name: "Backend Jr", category: "backend" }),
+      makeRole({ role_id: "b1", role_name: "Backend Jr", category: "tech" }),
       makeRole({ role_id: "d1", role_name: "Data Jr", category: "data" }),
     ]);
 
@@ -115,7 +115,7 @@ describe("DashboardContent", () => {
 
     await screen.findByRole("heading", { name: "Backend Jr" });
 
-    await user.selectOptions(screen.getByLabelText(/Filtrar por categoria/i), "backend");
+    await user.selectOptions(screen.getByLabelText(/Filtrar por categoria/i), "tech");
 
     expect(screen.getByRole("heading", { name: "Backend Jr" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Data Jr" })).not.toBeInTheDocument();
@@ -134,7 +134,7 @@ describe("DashboardContent", () => {
     const user = userEvent.setup();
 
     vi.mocked(getRecommendations).mockResolvedValue([
-      makeRole({ role_id: "cta-role", role_name: "Frontend Jr", category: "frontend" }),
+      makeRole({ role_id: "cta-role", role_name: "Frontend Jr", category: "design" }),
     ]);
 
     render(<DashboardContent />);
@@ -158,9 +158,9 @@ describe("DashboardContent", () => {
     const user = userEvent.setup();
 
     vi.mocked(getRecommendations).mockResolvedValue([
-      makeRole({ role_id: "a", role_name: "Role A", total_score: 60, demand_score: 10 }),
-      makeRole({ role_id: "b", role_name: "Role B", total_score: 55, demand_score: 70 }),
-      makeRole({ role_id: "c", role_name: "Role C", total_score: 80, demand_score: 40 }),
+      makeRole({ role_id: "a", role_name: "Role A", total_score: 60, skill_gaps: [{ skill_name: "Skill1", importance_weight: 3 }] }),
+      makeRole({ role_id: "b", role_name: "Role B", total_score: 55, skill_gaps: [{ skill_name: "Skill1", importance_weight: 7 }] }),
+      makeRole({ role_id: "c", role_name: "Role C", total_score: 80, skill_gaps: [{ skill_name: "Skill1", importance_weight: 4 }] }),
     ]);
 
     render(<DashboardContent />);

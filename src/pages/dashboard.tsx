@@ -28,10 +28,6 @@ const sortRecommendations = (
   const next = [...list];
 
   const getDemandScore = (role: RoleRecommendation): number => {
-    if (typeof role.demand_score === "number") {
-      return role.demand_score;
-    }
-
     return role.skill_gaps ? role.skill_gaps.reduce(
       (total, gap) => total + Math.max(0, gap.importance_weight || 0),
       0
