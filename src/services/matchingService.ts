@@ -78,8 +78,8 @@ const parseRoleRecommendation = (value: unknown): RoleRecommendation | null => {
     return null;
   }
 
-  const roleId = toText(value.role_id).trim();
-  const roleName = toText(value.role_name).trim();
+  const roleId = toText(value.role_id ?? value.id).trim();
+  const roleName = toText(value.role_name ?? value.name).trim();
   const totalScore = toNumber(value.total_score, 0);
   const category = toText(value.category).trim();
   const seniorityLevel = toText(value.seniority_level).trim();
@@ -164,6 +164,8 @@ const parseRoleDetail = (value: unknown): RoleDetail => {
     ? payload.required_technologies
     : Array.isArray(payload.technologies)
       ? payload.technologies
+      : Array.isArray(payload.role_skills)
+        ? payload.role_skills
       : [];
 
   return {
