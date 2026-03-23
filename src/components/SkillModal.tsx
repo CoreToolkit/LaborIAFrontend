@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,6 +13,24 @@ interface SkillModalProps {
   mode: 'add' | 'edit';
 }
 
+const EMPTY_SKILL_FORM: Skill = {
+  nombre: '',
+  tipo: 'tecnica',
+  nivel: 'Intermedio',
+  descripcion: '',
+};
+
+const getInitialFormData = (mode: SkillModalProps['mode'], initialData?: Skill): Skill => {
+  if (mode === 'edit' && initialData) {
+    return {
+      ...initialData,
+      descripcion: initialData.descripcion || '',
+    };
+  }
+
+  return { ...EMPTY_SKILL_FORM };
+};
+
 export function SkillModal({
   isOpen,
   onClose,
@@ -20,16 +38,19 @@ export function SkillModal({
   onSave,
   mode,
 }: SkillModalProps) {
-  const [formData, setFormData] = useState<Skill>(
-    initialData || {
-      nombre: '',
-      tipo: 'tecnica',
-      nivel: 'Intermedio',
-      descripcion: '',
+  const [formData, setFormData] = React.useState<Skill>(() => getInitialFormData(mode, initialData));
+  const [isLoading, setIsLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!isOpen) {
+      return;
     }
-  );
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+
+    setFormData(getInitialFormData(mode, initialData));
+    setError(null);
+    setIsLoading(false);
+  }, [isOpen, mode, initialData]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,7 +58,7 @@ export function SkillModal({
     setError(null);
 
     try {
-      await onSave(formData);
+      await onSave(mode === 'add' ? { ...formData, id: undefined } : formData);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al guardar');

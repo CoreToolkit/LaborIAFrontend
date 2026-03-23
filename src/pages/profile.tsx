@@ -215,12 +215,13 @@ function ProfileContent() {
     }
   };
 
-  const handleEditPreferences = () => {
-    setIsPreferencesModalOpen(true);
+  const handleCloseSkillModal = () => {
+    setIsSkillModalOpen(false);
+    setSelectedSkill(undefined);
+    setSkillMode('add');
   };
 
-  const handleOpenSettings = () => {
-    setActiveTab('preferences');
+  const handleEditPreferences = () => {
     setIsPreferencesModalOpen(true);
   };
 
@@ -666,7 +667,7 @@ function ProfileContent() {
                               {profile.habilidades
                                 .filter(skill => skill.tipo === 'tecnica')
                                 .map((skill, index) => (
-                                  <div key={index} className="space-y-2">
+                                  <div key={skill.id || `${skill.nombre}-${index}`} className="space-y-2">
                                     <div className="flex justify-between items-center">
                                       <div className="flex items-center gap-2">
                                         <span className="font-medium text-gray-900">{skill.nombre}</span>
@@ -707,7 +708,7 @@ function ProfileContent() {
                               {profile.habilidades
                                 .filter(skill => skill.tipo === 'blanda')
                                 .map((skill, index) => (
-                                  <div key={index} className="flex items-center gap-2 px-3 py-2 bg-green-50 text-green-700 rounded-full text-sm">
+                                  <div key={skill.id || `${skill.nombre}-${index}`} className="flex items-center gap-2 px-3 py-2 bg-green-50 text-green-700 rounded-full text-sm">
                                     <Star className="w-4 h-4" />
                                     <span>{skill.nombre}</span>
                                     <button 
@@ -916,10 +917,6 @@ function ProfileContent() {
                       Completar Onboarding
                     </Button>
                   )}
-                  <Button variant="outline" size="sm" onClick={handleOpenSettings}>
-                    <Settings className="w-4 h-4 mr-2" />
-                    Configuración
-                  </Button>
                 </div>
               </div>
             </div>
@@ -956,7 +953,7 @@ function ProfileContent() {
             
             <SkillModal
               isOpen={isSkillModalOpen}
-              onClose={() => setIsSkillModalOpen(false)}
+              onClose={handleCloseSkillModal}
               initialData={selectedSkill}
               onSave={handleSaveSkill}
               mode={skillMode}

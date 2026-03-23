@@ -1,7 +1,7 @@
 import React from "react";
 import Head from "next/head";
 import { useRouter } from "next/router";
-import { BriefcaseBusiness, Clock, LogOut, RefreshCw, Settings, User, AlertCircle } from "lucide-react";
+import { BriefcaseBusiness, Clock, LogOut, RefreshCw, User, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { RoleCard } from "@/components/RoleCard";
 import { RoleDashboardFilters } from "@/components/RoleDashboardFilters";
@@ -342,15 +342,6 @@ export function DashboardContent() {
               >
                 <User className="h-4 w-4" />
                 Mi Perfil
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => router.push("/profile")}
-                className="gap-2"
-              >
-                <Settings className="h-4 w-4" />
-                Configuracion
               </Button>
               <Button variant="outline" size="sm" onClick={handleLogout} className="gap-2">
                 <LogOut className="h-4 w-4" />
