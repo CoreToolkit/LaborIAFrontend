@@ -114,10 +114,10 @@ export const LoginForm = () => {
             className="w-full cursor-pointer hover:bg-blue-600 hover:text-white transition-colors"
           >
             <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
-              <path fill="#f35325" d="M0 0h11.377v11.372H0z" />
-              <path fill="#81bc06" d="M12.623 0H24v11.372H12.623z" />
-              <path fill="#05a6f0" d="M0 12.628h11.377V24H0z" />
-              <path fill="#ffba08" d="M12.623 12.628H24V24H12.623z" />
+              <path fill="#2563eb" d="M0 0h11.377v11.372H0z" />
+              <path fill="#2563eb" d="M12.623 0H24v11.372H12.623z" />
+              <path fill="#2563eb" d="M0 12.628h11.377V24H0z" />
+              <path fill="#2563eb" d="M12.623 12.628H24V24H12.623z" />
             </svg>
             Microsoft
           </Button>
