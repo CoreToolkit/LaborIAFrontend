@@ -6,20 +6,33 @@ import { Provider, setProvider, clearProvider } from '@/utils/session';
 export const LoginForm = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
-  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const backendUrlFromEnv = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const apiUrlFromEnv = process.env.NEXT_PUBLIC_API_URL;
+
+  const resolvedBackendUrl = (() => {
+    if (backendUrlFromEnv) return backendUrlFromEnv.replace(/\/+$/, '');
+
+    if (!apiUrlFromEnv) return null;
+
+    try {
+      return new URL(apiUrlFromEnv).origin;
+    } catch {
+      return null;
+    }
+  })();
 
   const startOAuth = async (provider: Provider) => {
     setAuthError(null);
     setIsSubmitting(true);
 
     try {
-      if (!backendUrl) {
+      if (!resolvedBackendUrl) {
         throw new Error(
-          'backendUrl no está definida. Asegúrate de tener NEXT_PUBLIC_BACKEND_URL en tu entorno.'
+          'No se pudo resolver la URL del backend. Configura NEXT_PUBLIC_BACKEND_URL (o NEXT_PUBLIC_API_URL) en tu entorno.'
         );
       }
 
-      const authUrl = `${backendUrl}/auth/${provider}`;
+      const authUrl = `${resolvedBackendUrl}/auth/${provider}`;
       setProvider(provider);
 
       const res = await fetch(authUrl);
