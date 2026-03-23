@@ -2,19 +2,14 @@ import React from "react";
 import Head from "next/head";
 import { useRouter } from "next/router";
 import {
-  BriefcaseBusiness,
   AlertCircle,
   RefreshCw,
   Users,
   Heart,
   Zap,
   TrendingUp,
-  ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { RoleCard } from "@/components/RoleCard";
-import { RoleDashboardFilters } from "@/components/RoleDashboardFilters";
-import { RoleDetailModal } from "@/components/RoleDetailModal";
 import { DashboardLayout } from "@/components/Layout";
 import { DashboardCard, EmployabilityScore } from "@/components/Dashboard";
 import { useProfile } from "@/hooks/useProfile";
@@ -22,73 +17,13 @@ import {
   getRecommendations,
   recalculateRecommendations,
 } from "@/services/matchingService";
-import { RoleRecommendation, RoleSortOption } from "@/types/matching";
+import { RoleRecommendation } from "@/types/matching";
 import {
   hasSkippedOnboarding,
   profileNeedsOnboarding,
 } from "@/utils/profileOnboarding";
-import { clearProvider, clearTokens, getAccessToken } from "@/utils/session";
+import { getAccessToken } from "@/utils/session";
 import PrivateRoute from "@/components/PrivateRoute";
-
-const sortRecommendations = (
-  list: RoleRecommendation[],
-  sortBy: RoleSortOption
-): RoleRecommendation[] => {
-  const next = [...list];
-
-  const getDemandScore = (role: RoleRecommendation): number => {
-    return role.skill_gaps ? role.skill_gaps.reduce(
-      (total, gap) => total + Math.max(0, gap.importance_weight || 0),
-      0
-    ) : 0;
-  };
-
-  if (sortBy === "name-asc") {
-    return next.sort((a, b) => a.role_name.localeCompare(b.role_name, "es"));
-  }
-
-  if (sortBy === "salary-desc") {
-    return next.sort((a, b) => {
-      const salaryA = a.estimated_salary_max_cop ?? a.estimated_salary_min_cop ?? -1;
-      const salaryB = b.estimated_salary_max_cop ?? b.estimated_salary_min_cop ?? -1;
-
-      return salaryB - salaryA;
-    });
-  }
-
-  if (sortBy === "demand-desc") {
-    return next.sort((a, b) => {
-      const demandA = getDemandScore(a);
-      const demandB = getDemandScore(b);
-
-      if (demandA === demandB) {
-        return a.role_name.localeCompare(b.role_name, "es");
-      }
-
-      return demandB - demandA;
-    });
-  }
-
-  return next.sort((a, b) => b.total_score - a.total_score);
-};
-
-const getMostDemandedSkills = (roles: RoleRecommendation[]): string[] => {
-  const scoreBySkill = new Map<string, number>();
-
-  roles.forEach((role) => {
-    if (role.skill_gaps) {
-      role.skill_gaps.forEach((gap) => {
-        const current = scoreBySkill.get(gap.skill_name) || 0;
-        scoreBySkill.set(gap.skill_name, current + Math.max(1, gap.importance_weight));
-      });
-    }
-  });
-
-  return [...scoreBySkill.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
-    .map(([skillName]) => skillName);
-};
 
 export function DashboardContent() {
   const router = useRouter();
@@ -98,47 +33,11 @@ export function DashboardContent() {
   const [isRecommendationsLoading, setIsRecommendationsLoading] = React.useState(true);
   const [recommendationsError, setRecommendationsError] = React.useState<string | null>(null);
 
-  const [selectedCategory, setSelectedCategory] = React.useState("all");
-  const [selectedSort, setSelectedSort] = React.useState<RoleSortOption>("match-desc");
-  const [isRecalculating, setIsRecalculating] = React.useState(false);
-
-  const [isRoleDetailOpen, setIsRoleDetailOpen] = React.useState(false);
-  const [selectedRoleId, setSelectedRoleId] = React.useState<string | null>(null);
-
   const shouldOpenOnboarding = React.useMemo(() => {
     if (!profile) return false;
 
     return profileNeedsOnboarding(profile) && !hasSkippedOnboarding(profile.id);
   }, [profile]);
-
-  const loadRecommendations = React.useCallback(async () => {
-    setIsRecommendationsLoading(true);
-    setRecommendationsError(null);
-
-    const token = getAccessToken();
-    if (!token) {
-      setRecommendations([]);
-      setRecommendationsError("Tu sesion expiro. Inicia sesion nuevamente.");
-      setIsRecommendationsLoading(false);
-      return;
-    }
-
-    try {
-      const data = await getRecommendations(token);
-      setRecommendations(data);
-    } catch (error) {
-      let message = "No se pudieron cargar los roles recomendados.";
-      if (error instanceof Error) {
-        message = error.message && typeof error.message === "string" && error.message.trim() 
-          ? error.message.trim() 
-          : message;
-      }
-      setRecommendations([]);
-      setRecommendationsError(message);
-    } finally {
-      setIsRecommendationsLoading(false);
-    }
-  }, []);
 
   const initializeRecommendations = React.useCallback(async () => {
     setIsRecommendationsLoading(true);
@@ -189,117 +88,17 @@ export function DashboardContent() {
     void initializeRecommendations();
   }, [isProfileLoading, shouldOpenOnboarding, initializeRecommendations]);
 
-  const handleLogout = async () => {
-    const accessToken = getAccessToken();
-
-    try {
-      if (!accessToken) {
-        clearTokens();
-        clearProvider();
-        router.push("/login");
-        return;
-      }
-
-      const response = await fetch("/api/auth/logout", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      });
-
-      if (!response.ok) {
-        console.error("Logout respondio con error HTTP:", response.status);
-      }
-    } catch (error) {
-      console.error("Error al cerrar sesion:", error);
-    } finally {
-      clearTokens();
-      clearProvider();
-      router.push("/login");
-    }
-  };
-
-  const handleRecalculate = async () => {
-    const token = getAccessToken();
-    if (!token) {
-      setRecommendationsError("Tu sesion expiro. Inicia sesion nuevamente.");
-      return;
-    }
-
-    setIsRecalculating(true);
-    setRecommendationsError(null);
-
-    try {
-      await recalculateRecommendations(token);
-      await loadRecommendations();
-    } catch (error) {
-      let message = "No se pudo recalcular el matching.";
-      if (error instanceof Error) {
-        message = error.message && typeof error.message === "string" && error.message.trim() 
-          ? error.message.trim() 
-          : message;
-      }
-      setRecommendationsError(message);
-    } finally {
-      setIsRecalculating(false);
-    }
-  };
-
-  const handleStartInterview = (roleId: string) => {
-    router.push(`/interview/start?role_id=${encodeURIComponent(roleId)}`);
-  };
-
-  const handleViewRoleDetail = (roleId: string) => {
-    setSelectedRoleId(roleId);
-    setIsRoleDetailOpen(true);
-  };
-
-  const handleCloseRoleDetail = () => {
-    setIsRoleDetailOpen(false);
-    setSelectedRoleId(null);
-  };
-
-  const categories = React.useMemo(() => {
-    return [...new Set(recommendations.map((item) => item.category).filter(Boolean))].sort();
-  }, [recommendations]);
-
-  const salarySortAvailable = React.useMemo(() => {
-    return recommendations.some(
-      (item) => typeof item.estimated_salary_max_cop === "number" || typeof item.estimated_salary_min_cop === "number"
-    );
-  }, [recommendations]);
-
-  const filteredAndSortedRecommendations = React.useMemo(() => {
-    const filtered =
-      selectedCategory === "all"
-        ? recommendations
-        : recommendations.filter((item) => item.category === selectedCategory);
-
-    return sortRecommendations(filtered, selectedSort);
-  }, [recommendations, selectedCategory, selectedSort]);
-
-  const visibleRecommendations = React.useMemo(() => {
-    return filteredAndSortedRecommendations.slice(0, 5);
-  }, [filteredAndSortedRecommendations]);
-
-  const showRecommendations = !isRecommendationsLoading && !recommendationsError && recommendations.length > 0;
-
-  const allMatchesUnderThirty = React.useMemo(() => {
-    return (
-      recommendations.length > 0 &&
-      recommendations.every((item) => item.total_score < 30)
-    );
-  }, [recommendations]);
-
-  const suggestedSkills = React.useMemo(() => {
-    return getMostDemandedSkills(recommendations);
-  }, [recommendations]);
-
-  const selectedRole = React.useMemo(() => {
-    if (!selectedRoleId) return null;
-
-    return recommendations.find((item) => item.role_id === selectedRoleId) || null;
-  }, [recommendations, selectedRoleId]);
+  const rolesCount = recommendations.length;
+  const topMatch = recommendations
+    .slice()
+    .sort((a, b) => b.total_score - a.total_score)[0];
+  const averageMatch =
+    recommendations.length > 0
+      ? Math.round(
+          recommendations.reduce((acc, item) => acc + item.total_score, 0) /
+            recommendations.length
+        )
+      : 0;
 
   if (isProfileLoading) {
     return (
@@ -373,11 +172,11 @@ export function DashboardContent() {
                   description="Encuentra roles perfectos para ti"
                   metric={{
                     label: "Roles afines",
-                    value: "3",
+                    value: rolesCount,
                   }}
                   action={{
                     label: "Ver más",
-                    onClick: () => document.getElementById('roles-section')?.scrollIntoView({ behavior: 'smooth' }),
+                    onClick: () => router.push("/matching"),
                   }}
                 />
 
@@ -414,160 +213,72 @@ export function DashboardContent() {
                 />
               </div>
 
-              {/* Grid with Recommendations and EmployabilityScore */}
-              <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
-                {/* Recommendations Section (3 columns) */}
-                <div className="lg:col-span-3">
+              <div className="grid grid-cols-1 gap-6 lg:grid-cols-4 mb-8">
+                <section className="lg:col-span-3 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <h2 className="text-xl font-semibold text-slate-900">Resumen de Matching</h2>
+                      <p className="mt-1 text-sm text-slate-600">
+                        Los roles recomendados ahora se visualizan exclusivamente en el módulo Matching Roles.
+                      </p>
+                    </div>
+                    <Button variant="outline" onClick={() => router.push("/matching")}>
+                      Ir a Matching Roles
+                    </Button>
+                  </div>
+
                   {isRecommendationsLoading && (
-                    <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-                      <div className="mb-4 flex items-center gap-2 text-slate-700">
-                        <RefreshCw className="h-4 w-4 animate-spin" />
-                        Cargando recomendaciones...
-                      </div>
-                      <div className="grid grid-cols-1 gap-4">
-                        {Array.from({ length: 2 }).map((_, index) => (
-                          <div
-                            key={`role-skeleton-${index}`}
-                            className="h-40 animate-pulse rounded-xl border border-slate-200 bg-slate-100"
-                          />
-                        ))}
-                      </div>
+                    <div className="mt-6 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                      Cargando resumen de matching...
                     </div>
                   )}
 
                   {!isRecommendationsLoading && recommendationsError && (
-                    <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-red-700 shadow-sm">
+                    <div className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-red-700">
                       <div className="flex items-start gap-3">
-                        <AlertCircle className="h-5 w-5 flex-shrink-0 mt-0.5" />
+                        <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0" />
                         <div className="flex-1">
-                          <p className="font-medium">No pudimos cargar tus recomendaciones.</p>
+                          <p className="font-medium">No pudimos cargar tu resumen de matching.</p>
                           <p className="mt-1 text-sm">{recommendationsError}</p>
-                          <div className="mt-4 flex flex-wrap gap-3">
-                            <Button
-                              className="mt-0"
-                              variant="outline"
-                              onClick={() => void initializeRecommendations()}
-                            >
-                              <RefreshCw className="w-4 h-4 mr-2" />
-                              Reintentar
-                            </Button>
-                          </div>
+                          <Button
+                            className="mt-3"
+                            variant="outline"
+                            onClick={() => void initializeRecommendations()}
+                          >
+                            Reintentar
+                          </Button>
                         </div>
                       </div>
                     </div>
                   )}
 
-                  {!isRecommendationsLoading && !recommendationsError && visibleRecommendations.length === 0 ? (
-                    <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-                      <BriefcaseBusiness className="mx-auto mb-3 h-12 w-12 text-slate-400" />
-                      <h2 className="text-lg font-semibold text-slate-900">Aun no hay recomendaciones</h2>
-                      <p className="mt-2 text-sm text-slate-600">
-                        Ejecutamos el matching automaticamente, pero aun no hay resultados para mostrar.
-                      </p>
-                      <div className="mt-5 flex items-center justify-center gap-3">
-                        <Button onClick={() => router.push("/Onboarding")}>Complete Profile</Button>
-                        <Button variant="outline" onClick={() => void handleRecalculate()}>
-                          Calcular Matching
-                        </Button>
+                  {!isRecommendationsLoading && !recommendationsError && (
+                    <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Roles afines</p>
+                        <p className="mt-2 text-2xl font-bold text-slate-900">{rolesCount}</p>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Match promedio</p>
+                        <p className="mt-2 text-2xl font-bold text-slate-900">{averageMatch}%</p>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Mejor rol actual</p>
+                        <p className="mt-2 text-base font-semibold text-slate-900">{topMatch?.role_name || "Sin datos"}</p>
+                        <p className="text-sm text-slate-600">{topMatch ? `${topMatch.total_score}% match` : "Completa tu perfil para obtener recomendaciones"}</p>
                       </div>
                     </div>
-                  ) : (
-                    showRecommendations && (
-                      <div className="space-y-4">
-                        {visibleRecommendations.map((role) => (
-                          <RoleCard
-                            key={role.role_id}
-                            role={role}
-                            onStartInterview={handleStartInterview}
-                            onViewDetail={handleViewRoleDetail}
-                          />
-                        ))}
-                      </div>
-                    )
                   )}
-                </div>
+                </section>
 
-                {/* EmployabilityScore Panel (1 column) */}
                 <div>
                   <EmployabilityScore score={72} technicalSkills={85} softSkills={60} />
                 </div>
               </div>
-
-              {/* All Recommendations Section */}
-              {showRecommendations && (
-                <section id="roles-section" className="space-y-5 pt-6 border-t border-slate-200">
-                  {allMatchesUnderThirty && (
-                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
-                      <p className="font-semibold text-amber-800">
-                        Keep learning! Complete more skills to unlock better matches.
-                      </p>
-                      <p className="mt-1 text-sm text-amber-700">
-                        Te sugerimos fortalecer estas skills de alta demanda:
-                      </p>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {suggestedSkills.length > 0 ? (
-                          suggestedSkills.map((skill) => (
-                            <span
-                              key={`suggested-skill-${skill}`}
-                              className="rounded-full border border-amber-300 bg-white px-3 py-1 text-xs font-medium text-amber-800"
-                            >
-                              {skill}
-                            </span>
-                          ))
-                        ) : (
-                          <span className="text-sm text-amber-700">Aun no hay sugerencias disponibles.</span>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="flex items-center justify-between">
-                    <h2 className="text-xl font-semibold text-slate-900">Todos los roles recomendados</h2>
-                    <span className="text-sm text-slate-500">
-                      Mostrando {visibleRecommendations.length} de {filteredAndSortedRecommendations.length}
-                    </span>
-                  </div>
-
-                  <div className="mb-6">
-                    <RoleDashboardFilters
-                      categories={categories}
-                      selectedCategory={selectedCategory}
-                      selectedSort={selectedSort}
-                      salarySortAvailable={salarySortAvailable}
-                      onCategoryChange={setSelectedCategory}
-                      onSortChange={setSelectedSort}
-                    />
-                  </div>
-
-                  {filteredAndSortedRecommendations.length === 0 ? (
-                    <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-600 shadow-sm">
-                      No hay roles para los filtros seleccionados. Prueba otra categoria.
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 gap-4">
-                      {filteredAndSortedRecommendations.map((role) => (
-                        <RoleCard
-                          key={role.role_id}
-                          role={role}
-                          onStartInterview={handleStartInterview}
-                          onViewDetail={handleViewRoleDetail}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </section>
-              )}
             </div>
           </main>
         </div>
-
-        <RoleDetailModal
-          isOpen={isRoleDetailOpen}
-          roleId={selectedRoleId}
-          fallbackRole={selectedRole}
-          onClose={handleCloseRoleDetail}
-          onStartInterview={handleStartInterview}
-        />
       </DashboardLayout>
     </>
   );

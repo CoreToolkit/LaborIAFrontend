@@ -1,13 +1,21 @@
 import React from 'react';
-import { Search, Bell, Menu, User } from 'lucide-react';
-import { useRouter } from 'next/router';
+import { Search, Bell, Menu } from 'lucide-react';
+import { useProfile } from '@/hooks/useProfile';
+import Image from 'next/image';
 
 interface TopbarProps {
   onMenuClick?: () => void;
 }
 
 export function Topbar({ onMenuClick }: TopbarProps) {
-  const router = useRouter();
+  const { profile } = useProfile();
+  const userName = profile?.nombre || 'Usuario';
+  const userTitle =
+    profile?.carrera ||
+    profile?.preferencias?.cargo ||
+    'Perfil profesional';
+  const userPhoto = profile?.fotoPerfil;
+  const userInitial = userName.trim().charAt(0).toUpperCase() || 'U';
 
   return (
     <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between border-b border-slate-200 bg-white px-4 sm:px-6 lg:px-8 shadow-sm">
@@ -15,6 +23,9 @@ export function Topbar({ onMenuClick }: TopbarProps) {
       <div className="flex items-center gap-4">
         <button
           onClick={onMenuClick}
+          type="button"
+          aria-label="Abrir menú"
+          title="Abrir menú"
           className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 lg:hidden"
         >
           <Menu className="h-6 w-6" />
@@ -52,7 +63,12 @@ export function Topbar({ onMenuClick }: TopbarProps) {
       {/* Right side - Actions */}
       <div className="flex items-center gap-4">
         {/* Notifications */}
-        <button className="relative rounded-full p-1.5 text-slate-400 hover:text-slate-500 hover:bg-slate-100 transition-colors">
+        <button
+          type="button"
+          aria-label="Notificaciones"
+          title="Notificaciones"
+          className="relative rounded-full p-1.5 text-slate-400 hover:text-slate-500 hover:bg-slate-100 transition-colors"
+        >
           <span className="absolute right-1 top-1 flex h-2 w-2 items-center justify-center rounded-full bg-blue-600 ring-2 ring-white" />
           <Bell className="h-5 w-5" />
         </button>
@@ -60,15 +76,29 @@ export function Topbar({ onMenuClick }: TopbarProps) {
         {/* User profile */}
         <div className="flex items-center gap-3 border-l border-slate-200 pl-4">
           <div className="hidden flex-col text-right sm:block">
-            <span className="block text-sm font-semibold text-slate-900">Juan Pérez</span>
-            <span className="block text-xs text-slate-500">Junior Developer</span>
+            <span className="block text-sm font-semibold text-slate-900">{userName}</span>
+            <span className="block text-xs text-slate-500">{userTitle}</span>
           </div>
-          <button className="flex items-center gap-1.5 rounded-full p-0.5 hover:ring-2 hover:ring-slate-300 transition-all">
-            <img
-              className="h-9 w-9 rounded-full bg-slate-100 object-cover ring-1 ring-slate-200"
-              src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?crop=entropy&cs=tinysrgb&fit=facearea&facepad=2&w=256&h=256&q=80"
-              alt="Usuario"
-            />
+          <button
+            type="button"
+            aria-label="Perfil de usuario"
+            title="Perfil de usuario"
+            className="flex items-center gap-1.5 rounded-full p-0.5 hover:ring-2 hover:ring-slate-300 transition-all"
+          >
+            {userPhoto ? (
+              <Image
+                className="h-9 w-9 rounded-full bg-slate-100 object-cover ring-1 ring-slate-200"
+                src={userPhoto}
+                alt={userName}
+                width={36}
+                height={36}
+                unoptimized
+              />
+            ) : (
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-600 text-sm font-semibold text-white ring-1 ring-slate-200">
+                {userInitial}
+              </div>
+            )}
           </button>
         </div>
       </div>

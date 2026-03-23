@@ -19,13 +19,13 @@ export function RoleDashboardFilters({
   onSortChange,
 }: RoleDashboardFiltersProps) {
   return (
-    <div className="grid grid-cols-1 gap-3 rounded-lg border border-border bg-card p-4 md:grid-cols-2">
+    <div className="grid grid-cols-1 gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-2">
       <label className="flex flex-col gap-2">
-        <span className="text-sm font-medium text-foreground">Categoria</span>
+        <span className="text-sm font-medium text-slate-900">Categoria</span>
         <select
           value={selectedCategory}
           onChange={(event) => onCategoryChange(event.target.value)}
-          className="h-10 rounded-[var(--radius)] border border-border bg-card px-3 text-sm text-foreground transition-colors focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+          className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 transition-colors focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100"
           aria-label="Filtrar por categoria"
         >
           <option value="all">Todas</option>
@@ -38,11 +38,11 @@ export function RoleDashboardFilters({
       </label>
 
       <label className="flex flex-col gap-2">
-        <span className="text-sm font-medium text-foreground">Ordenar por</span>
+        <span className="text-sm font-medium text-slate-900">Ordenar por</span>
         <select
           value={selectedSort}
           onChange={(event) => onSortChange(event.target.value as RoleSortOption)}
-          className="h-10 rounded-[var(--radius)] border border-border bg-card px-3 text-sm text-foreground transition-colors focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+          className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 transition-colors focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100"
           aria-label="Ordenar recomendaciones"
         >
           <option value="match-desc">Match score (descendente)</option>

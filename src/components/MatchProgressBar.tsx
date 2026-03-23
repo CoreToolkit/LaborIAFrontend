@@ -9,14 +9,14 @@ interface MatchProgressBarProps {
 
 const getToneClass = (score: number): string => {
   if (score < 50) return "bg-red-500";
-  if (score <= 75) return "bg-amber-500";
+  if (score <= 75) return "bg-blue-500";
 
   return "bg-emerald-500";
 };
 
 const getLabelClass = (score: number): string => {
   if (score < 50) return "text-red-700 bg-red-50 border-red-200";
-  if (score <= 75) return "text-amber-700 bg-amber-50 border-amber-200";
+  if (score <= 75) return "text-blue-700 bg-blue-50 border-blue-200";
 
   return "text-emerald-700 bg-emerald-50 border-emerald-200";
 };
@@ -40,7 +40,7 @@ export function MatchProgressBar({ score }: MatchProgressBarProps) {
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-foreground">
+          <span className="text-sm font-semibold text-slate-900">
             {`${shownScore}% Match`}
           </span>
           <div
@@ -52,12 +52,12 @@ export function MatchProgressBar({ score }: MatchProgressBarProps) {
               type="button"
               aria-label="Explicacion del match score"
               onClick={() => setIsTooltipOpen((prev) => !prev)}
-              className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              className="rounded-full p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
             >
               <Info className="h-4 w-4" />
             </button>
             {isTooltipOpen && (
-              <div className="absolute left-0 top-8 z-20 w-72 rounded-lg border border-border bg-card p-3 text-xs text-foreground shadow-lg">
+              <div className="absolute left-0 top-8 z-20 w-72 rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-700 shadow-lg">
                 {tooltipText}
               </div>
             )}
@@ -65,7 +65,7 @@ export function MatchProgressBar({ score }: MatchProgressBarProps) {
         </div>
         <span
           className={cn(
-            "rounded-full border px-2 py-0.5 text-xs font-semibold",
+            "rounded-md border px-2 py-0.5 text-xs font-semibold",
             getLabelClass(clampedScore)
           )}
         >
@@ -73,7 +73,7 @@ export function MatchProgressBar({ score }: MatchProgressBarProps) {
         </span>
       </div>
 
-      <div className="w-full rounded-full bg-muted p-1">
+      <div className="w-full rounded-full bg-slate-100 p-1">
         <div className="flex gap-1">
           {Array.from({ length: 20 }).map((_, index) => (
             <span
@@ -81,7 +81,7 @@ export function MatchProgressBar({ score }: MatchProgressBarProps) {
               key={`segment-${index}`}
               className={cn(
                 "h-2 flex-1 rounded-full",
-                index < filledSegments ? toneClass : "bg-muted"
+                index < filledSegments ? toneClass : "bg-slate-200"
               )}
             />
           ))}

@@ -59,13 +59,13 @@ export function EditPersonalInfoModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 overflow-y-auto py-8">
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 my-auto">
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
-          <h2 className="text-xl font-semibold text-gray-900">Editar Información Personal</h2>
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 py-8">
+      <div className="mx-4 my-auto w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-xl">
+        <div className="flex items-center justify-between border-b border-slate-200 p-6">
+          <h2 className="text-xl font-semibold text-slate-900">Editar Información Personal</h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600"
+            className="text-slate-400 transition-colors hover:text-slate-600"
             aria-label="Cerrar modal"
           >
             <X className="w-5 h-5" />
@@ -168,7 +168,7 @@ export function EditPersonalInfoModal({
               value={formData.bio || ''}
               onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
               placeholder="Cuéntanos sobre ti..."
-              className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all focus:outline-none focus:ring-2 focus:ring-blue-600/20"
               rows={3}
             />
           </div>
@@ -179,7 +179,7 @@ export function EditPersonalInfoModal({
               id="nivelIngles"
               value={formData.nivelIngles || ''}
               onChange={(e) => setFormData({ ...formData, nivelIngles: e.target.value })}
-              className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all focus:outline-none focus:ring-2 focus:ring-blue-600/20"
               aria-label="Seleccionar nivel de inglés"
             >
               <option value="">Seleccionar nivel</option>

@@ -28,6 +28,8 @@ export function DashboardCard({
   metric,
   children,
 }: DashboardCardProps) {
+  const metricPercent = metric ? Math.max(0, Math.min(100, Number.parseFloat(String(metric.value)) || 0)) : 0;
+
   return (
     <div className="relative flex flex-col overflow-hidden rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200 transition-all hover:shadow-md hover:ring-blue-600/30">
       {/* Header */}
@@ -35,7 +37,12 @@ export function DashboardCard({
         <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${iconBgColor}`}>
           <Icon className="h-6 w-6 text-slate-900" />
         </div>
-        <button className="text-slate-400 hover:text-slate-600 transition-colors">
+        <button
+          type="button"
+          aria-label={`Más opciones de ${title}`}
+          title={`Más opciones de ${title}`}
+          className="text-slate-400 transition-colors hover:text-slate-600"
+        >
           <MoreVertical className="h-5 w-5" />
         </button>
       </div>
@@ -51,12 +58,12 @@ export function DashboardCard({
             <span className="font-medium text-slate-600">{metric.label}</span>
             <span className="font-semibold text-slate-900">{metric.value}</span>
           </div>
-          <div className="w-full bg-slate-100 rounded-full h-2">
-            <div
-              className="bg-blue-600 h-2 rounded-full"
-              style={{ width: `${metric.value}%` }}
-            />
-          </div>
+          <progress
+            className="h-2 w-full overflow-hidden rounded-full appearance-none [&::-webkit-progress-bar]:rounded-full [&::-webkit-progress-bar]:bg-slate-100 [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-blue-600 [&::-moz-progress-bar]:rounded-full [&::-moz-progress-bar]:bg-blue-600"
+            max={100}
+            value={metricPercent}
+            aria-label={`${metric.label}: ${metric.value}`}
+          />
         </div>
       )}
 

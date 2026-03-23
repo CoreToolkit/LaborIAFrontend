@@ -71,14 +71,14 @@ export function SkillModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-card rounded-lg shadow-xl max-w-md w-full mx-4 border border-border">
-        <div className="flex items-center justify-between p-6 border-b border-border">
-          <h2 className="text-xl font-semibold text-foreground">
+      <div className="bg-white rounded-2xl shadow-xl max-w-md w-full mx-4 border border-slate-200">
+        <div className="flex items-center justify-between p-6 border-b border-slate-200">
+          <h2 className="text-xl font-semibold text-slate-900">
             {mode === 'add' ? 'Agregar Habilidad' : 'Editar Habilidad'}
           </h2>
           <button
             onClick={onClose}
-            className="text-muted-foreground hover:text-foreground transition-colors"
+            className="text-slate-400 hover:text-slate-600 transition-colors"
             aria-label="Cerrar modal"
           >
             <X className="w-5 h-5" />
@@ -115,7 +115,7 @@ export function SkillModal({
               }
               required
               aria-label="Tipo de habilidad"
-              className="mt-1 w-full px-3 py-2 border border-border rounded-[var(--radius)] bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-colors"
+              className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all focus:outline-none focus:ring-2 focus:ring-blue-600/20"
             >
               <option value="tecnica">Técnica</option>
               <option value="blanda">Blanda</option>
@@ -135,7 +135,7 @@ export function SkillModal({
               }
               required
               aria-label="Nivel de dominio"
-              className="mt-1 w-full px-3 py-2 border border-border rounded-[var(--radius)] bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-colors"
+              className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all focus:outline-none focus:ring-2 focus:ring-blue-600/20"
             >
               <option value="Basico">Básico</option>
               <option value="Intermedio">Intermedio</option>
@@ -151,7 +151,7 @@ export function SkillModal({
               onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })}
               placeholder="Describe tu experiencia con esta habilidad..."
               rows={3}
-              className="mt-1 w-full px-3 py-2 border border-border rounded-[var(--radius)] bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-colors"
+              className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all focus:outline-none focus:ring-2 focus:ring-blue-600/20"
             />
           </div>
 

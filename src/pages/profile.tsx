@@ -246,9 +246,9 @@ function ProfileContent() {
         <link rel="icon" href="/favicon.ico" />
       </Head>
 
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-slate-50">
         {/* Header */}
-        <header className="bg-white border-b border-gray-200">
+        <header className="bg-white border-b border-slate-200">
           <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex justify-between items-center h-16">
               <div className="flex items-center gap-2">
@@ -277,18 +277,18 @@ function ProfileContent() {
         {/* Main Content */}
         <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="mb-6">
-            <h1 className="text-3xl font-bold text-gray-900">Mi Perfil</h1>
-            <p className="text-gray-600 mt-2">
+            <h1 className="text-3xl font-bold text-slate-900">Mi Perfil</h1>
+            <p className="text-slate-600 mt-2">
               Información de tu cuenta y configuración personal
             </p>
           </div>
 
           {/* Loading State */}
           {isLoading && (
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8">
+            <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-8">
               <div className="flex items-center justify-center">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mr-3"></div>
-                <p className="text-gray-600">Cargando datos del perfil...</p>
+                <p className="text-slate-600">Cargando datos del perfil...</p>
               </div>
             </div>
           )}
@@ -321,7 +321,7 @@ function ProfileContent() {
           {profile && !isLoading && !error && (
             <div className="space-y-6">
               {/* Profile Header Card */}
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+              <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
                 {/* Header Section with Avatar */}
                 <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-8">
                   <div className="flex items-center justify-between">
@@ -363,14 +363,14 @@ function ProfileContent() {
                 </div>
 
                 {/* Tabs Navigation */}
-                <div className="border-b border-gray-200">
+                <div className="border-b border-slate-200">
                   <nav className="flex gap-8 px-6" aria-label="Profile sections">
                     <button
                       onClick={() => setActiveTab('info')}
                       className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                         activeTab === 'info'
                           ? 'border-blue-600 text-blue-600'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                          : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
                       }`}
                     >
                       <User className="w-4 h-4 inline mr-2" />
@@ -381,7 +381,7 @@ function ProfileContent() {
                       className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                         activeTab === 'experience'
                           ? 'border-blue-600 text-blue-600'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                          : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
                       }`}
                     >
                       <Briefcase className="w-4 h-4 inline mr-2" />
@@ -392,7 +392,7 @@ function ProfileContent() {
                       className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                         activeTab === 'skills'
                           ? 'border-blue-600 text-blue-600'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                          : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
                       }`}
                     >
                       <Award className="w-4 h-4 inline mr-2" />
@@ -403,7 +403,7 @@ function ProfileContent() {
                       className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                         activeTab === 'stats'
                           ? 'border-blue-600 text-blue-600'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                          : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
                       }`}
                     >
                       <TrendingUp className="w-4 h-4 inline mr-2" />
@@ -414,7 +414,7 @@ function ProfileContent() {
                       className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                         activeTab === 'preferences'
                           ? 'border-blue-600 text-blue-600'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                          : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
                       }`}
                     >
                       <Target className="w-4 h-4 inline mr-2" />
@@ -429,7 +429,7 @@ function ProfileContent() {
                   {activeTab === 'info' && (
                     <div className="space-y-6">
                       <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-lg font-semibold text-gray-900">Información Personal</h3>
+                        <h3 className="text-lg font-semibold text-slate-900">Información Personal</h3>
                         <button
                           onClick={() => setIsPersonalInfoModalOpen(true)}
                           className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
@@ -440,66 +440,66 @@ function ProfileContent() {
                       </div>
                       <div className="grid grid-cols-2 gap-6">
                         <div className="flex items-start gap-3">
-                          <Mail className="w-5 h-5 text-gray-400 mt-0.5" />
+                          <Mail className="w-5 h-5 text-slate-400 mt-0.5" />
                           <div>
-                            <p className="text-sm text-gray-500 font-medium">Correo electrónico</p>
-                            <p className="text-gray-900">{profile.email}</p>
+                            <p className="text-sm text-slate-500 font-medium">Correo electrónico</p>
+                            <p className="text-slate-900">{profile.email}</p>
                           </div>
                         </div>
                         
                         <div className="flex items-start gap-3">
-                          <User className="w-5 h-5 text-gray-400 mt-0.5" />
+                          <User className="w-5 h-5 text-slate-400 mt-0.5" />
                           <div>
-                            <p className="text-sm text-gray-500 font-medium">Nombre completo</p>
-                            <p className="text-gray-900">{profile.nombre}</p>
+                            <p className="text-sm text-slate-500 font-medium">Nombre completo</p>
+                            <p className="text-slate-900">{profile.nombre}</p>
                           </div>
                         </div>
 
                         {profile.telefono && (
                           <div className="flex items-start gap-3">
-                            <Globe className="w-5 h-5 text-gray-400 mt-0.5" />
+                            <Globe className="w-5 h-5 text-slate-400 mt-0.5" />
                             <div>
-                              <p className="text-sm text-gray-500 font-medium">Teléfono</p>
-                              <p className="text-gray-900">{profile.telefono}</p>
+                              <p className="text-sm text-slate-500 font-medium">Teléfono</p>
+                              <p className="text-slate-900">{profile.telefono}</p>
                             </div>
                           </div>
                         )}
 
                         {profile.ubicacion && (
                           <div className="flex items-start gap-3">
-                            <MapPin className="w-5 h-5 text-gray-400 mt-0.5" />
+                            <MapPin className="w-5 h-5 text-slate-400 mt-0.5" />
                             <div>
-                              <p className="text-sm text-gray-500 font-medium">Ubicación</p>
-                              <p className="text-gray-900">{profile.ubicacion}</p>
+                              <p className="text-sm text-slate-500 font-medium">Ubicación</p>
+                              <p className="text-slate-900">{profile.ubicacion}</p>
                             </div>
                           </div>
                         )}
 
                         {profile.carrera && (
                           <div className="flex items-start gap-3">
-                            <Briefcase className="w-5 h-5 text-gray-400 mt-0.5" />
+                            <Briefcase className="w-5 h-5 text-slate-400 mt-0.5" />
                             <div>
-                              <p className="text-sm text-gray-500 font-medium">Carrera</p>
-                              <p className="text-gray-900">{profile.carrera}</p>
+                              <p className="text-sm text-slate-500 font-medium">Carrera</p>
+                              <p className="text-slate-900">{profile.carrera}</p>
                             </div>
                           </div>
                         )}
 
                         {profile.universidad && (
                           <div className="flex items-start gap-3">
-                            <BookOpen className="w-5 h-5 text-gray-400 mt-0.5" />
+                            <BookOpen className="w-5 h-5 text-slate-400 mt-0.5" />
                             <div>
-                              <p className="text-sm text-gray-500 font-medium">Universidad</p>
-                              <p className="text-gray-900">{profile.universidad}</p>
+                              <p className="text-sm text-slate-500 font-medium">Universidad</p>
+                              <p className="text-slate-900">{profile.universidad}</p>
                             </div>
                           </div>
                         )}
 
                         {profile.fechaGraduacion && (
                           <div className="flex items-start gap-3">
-                            <Calendar className="w-5 h-5 text-gray-400 mt-0.5" />
+                            <Calendar className="w-5 h-5 text-slate-400 mt-0.5" />
                             <div>
-                              <p className="text-sm text-gray-500 font-medium">Fecha de Graduación</p>
+                              <p className="text-sm text-slate-500 font-medium">Fecha de Graduación</p>
                               <p className="text-gray-900">
                                 {new Date(profile.fechaGraduacion).toLocaleDateString('es-CO', {
                                   year: 'numeric',
@@ -513,10 +513,10 @@ function ProfileContent() {
 
                         {profile.nivelIngles && (
                           <div className="flex items-start gap-3">
-                            <Globe className="w-5 h-5 text-gray-400 mt-0.5" />
+                            <Globe className="w-5 h-5 text-slate-400 mt-0.5" />
                             <div>
-                              <p className="text-sm text-gray-500 font-medium">Nivel de Inglés</p>
-                              <p className="text-gray-900">{profile.nivelIngles}</p>
+                              <p className="text-sm text-slate-500 font-medium">Nivel de Inglés</p>
+                              <p className="text-slate-900">{profile.nivelIngles}</p>
                             </div>
                           </div>
                         )}
@@ -524,16 +524,16 @@ function ProfileContent() {
 
                       {/* Bio / Description */}
                       {profile.bio && (
-                        <div className="pt-6 border-t border-gray-200">
-                          <h4 className="text-sm font-semibold text-gray-900 mb-2">Descripción</h4>
-                          <p className="text-gray-700">{profile.bio}</p>
+                        <div className="pt-6 border-t border-slate-200">
+                          <h4 className="text-sm font-semibold text-slate-900 mb-2">Descripción</h4>
+                          <p className="text-slate-700">{profile.bio}</p>
                         </div>
                       )}
 
                       {/* Social Links */}
                       {profile.redesSociales && (
-                        <div className="pt-6 border-t border-gray-200">
-                          <h4 className="text-sm font-semibold text-gray-900 mb-4">Redes Sociales</h4>
+                        <div className="pt-6 border-t border-slate-200">
+                          <h4 className="text-sm font-semibold text-slate-900 mb-4">Redes Sociales</h4>
                           <div className="flex gap-4">
                             {profile.redesSociales.linkedin && (
                               <a
@@ -551,7 +551,7 @@ function ProfileContent() {
                                 href={profile.redesSociales.github}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="flex items-center gap-2 text-gray-700 hover:text-gray-900"
+                                className="flex items-center gap-2 text-slate-700 hover:text-slate-900"
                               >
                                 <Github className="w-5 h-5" />
                                 <span className="text-sm">GitHub</span>
@@ -578,7 +578,7 @@ function ProfileContent() {
                   {activeTab === 'experience' && (
                     <div className="space-y-4">
                       <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-lg font-semibold text-gray-900">Experiencia Laboral</h3>
+                        <h3 className="text-lg font-semibold text-slate-900">Experiencia Laboral</h3>
                         <Button size="sm" onClick={handleAddExperience}>
                           <Plus className="w-4 h-4 mr-2" />
                           Agregar Experiencia
@@ -588,7 +588,7 @@ function ProfileContent() {
                       {profile.experiencias && profile.experiencias.length > 0 ? (
                         <div className="space-y-4">
                           {profile.experiencias.map((exp, index) => (
-                            <div key={index} className="border border-gray-200 rounded-lg p-4 hover:border-blue-300 transition-colors">
+                            <div key={index} className="border border-slate-200 rounded-lg p-4 hover:border-blue-300 transition-colors">
                               <div className="flex justify-between items-start">
                                 <div className="flex gap-3">
                                   <div className="p-2 bg-blue-50 rounded-lg">
@@ -786,7 +786,7 @@ function ProfileContent() {
                                     key={index} 
                                     className={`p-4 rounded-lg border-2 ${
                                       logro.desbloqueado 
-                                        ? 'bg-yellow-50 border-yellow-400' 
+                                        ? 'bg-blue-50 border-blue-300' 
                                         : 'bg-gray-50 border-gray-200 opacity-60'
                                     }`}
                                   >

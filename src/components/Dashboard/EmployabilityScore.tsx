@@ -12,6 +12,9 @@ export function EmployabilityScore({
   technicalSkills = 85,
   softSkills = 60,
 }: EmployabilityScoreProps) {
+  const safeTechnicalSkills = Math.max(0, Math.min(100, technicalSkills));
+  const safeSoftSkills = Math.max(0, Math.min(100, softSkills));
+
   return (
     <div className="rounded-2xl bg-slate-900 p-6 text-white shadow-sm">
       <h3 className="text-lg font-semibold">Score de Empleabilidad</h3>
@@ -35,12 +38,12 @@ export function EmployabilityScore({
             <span className="text-slate-300">Habilidades Técnicas</span>
             <span className="font-semibold text-emerald-400">{technicalSkills}%</span>
           </div>
-          <div className="h-2 w-full rounded-full bg-slate-700">
-            <div
-              className="h-2 rounded-full bg-emerald-400"
-              style={{ width: `${technicalSkills}%` }}
-            />
-          </div>
+          <progress
+            className="h-2 w-full overflow-hidden rounded-full appearance-none [&::-webkit-progress-bar]:rounded-full [&::-webkit-progress-bar]:bg-slate-700 [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-emerald-400 [&::-moz-progress-bar]:rounded-full [&::-moz-progress-bar]:bg-emerald-400"
+            max={100}
+            value={safeTechnicalSkills}
+            aria-label={`Habilidades Técnicas: ${technicalSkills}%`}
+          />
         </div>
 
         {/* Soft Skills */}
@@ -49,12 +52,12 @@ export function EmployabilityScore({
             <span className="text-slate-300">Soft Skills</span>
             <span className="font-semibold text-blue-400">{softSkills}%</span>
           </div>
-          <div className="h-2 w-full rounded-full bg-slate-700">
-            <div
-              className="h-2 rounded-full bg-blue-400"
-              style={{ width: `${softSkills}%` }}
-            />
-          </div>
+          <progress
+            className="h-2 w-full overflow-hidden rounded-full appearance-none [&::-webkit-progress-bar]:rounded-full [&::-webkit-progress-bar]:bg-slate-700 [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-blue-400 [&::-moz-progress-bar]:rounded-full [&::-moz-progress-bar]:bg-blue-400"
+            max={100}
+            value={safeSoftSkills}
+            aria-label={`Soft Skills: ${softSkills}%`}
+          />
         </div>
       </div>
 

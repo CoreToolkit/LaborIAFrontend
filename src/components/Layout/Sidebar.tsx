@@ -12,6 +12,7 @@ import {
   LogOut,
   X,
 } from 'lucide-react';
+import { clearProvider, clearTokens } from '@/utils/session';
 
 interface SidebarProps {
   isOpen?: boolean;
@@ -33,6 +34,12 @@ const secondaryNavigation = [
 
 export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const router = useRouter();
+
+  const handleLogout = () => {
+    clearTokens();
+    clearProvider();
+    router.push('/login');
+  };
 
   return (
     <>
@@ -61,6 +68,9 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
             {isOpen && (
               <button
                 onClick={onClose}
+                type="button"
+                aria-label="Cerrar menú"
+                title="Cerrar menú"
                 className="ml-auto lg:hidden"
               >
                 <X className="h-5 w-5 text-slate-400" />
@@ -82,7 +92,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                     <li key={item.name}>
                       <Link
                         href={item.href}
-                        className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                        className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600/30 ${
                           isActive
                             ? 'bg-blue-50 text-blue-600'
                             : 'text-slate-700 hover:bg-slate-100'
@@ -109,7 +119,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                     <li key={item.name}>
                       <Link
                         href={item.href}
-                        className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                        className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600/30 ${
                           isActive
                             ? 'bg-blue-50 text-blue-600'
                             : 'text-slate-700 hover:bg-slate-100'
@@ -128,7 +138,9 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
           {/* Logout button */}
           <div className="border-t border-slate-200 px-3 py-4">
             <button
-              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 transition-colors"
+              type="button"
+              onClick={handleLogout}
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600/30"
             >
               <LogOut className="h-5 w-5" />
               <span>Cerrar sesión</span>

@@ -50,29 +50,29 @@ export const LoginForm = () => {
     <div className="w-full max-w-md space-y-6 ">
       {/* Logo */}
       <div className="flex items-center gap-2">
-        <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
-          <Clock className="w-6 h-6 text-primary-foreground" />
+        <div className="h-10 w-10 bg-blue-600 rounded-lg flex items-center justify-center">
+          <Clock className="w-6 h-6 text-white" />
         </div>
-        <span className="text-xl font-semibold text-foreground">LaborIA</span>
+        <span className="text-xl font-semibold text-slate-900">LaborIA</span>
       </div>
 
       {/* Título */}
       <div className="space-y-2">
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">Bienvenido de nuevo</h1>
-        <p className="text-sm text-muted-foreground">
+        <h1 className="text-3xl font-bold tracking-tight text-slate-900">Bienvenido de nuevo</h1>
+        <p className="text-sm text-slate-500">
           Inicia sesión con tu cuenta de Google o Microsoft.
         </p>
       </div>
 
       {/* Contenedor con borde para el formulario completo */}
-      <div className="p-8 border border-border rounded-lg bg-card shadow-sm space-y-6">
+      <div className="p-8 border border-slate-200 rounded-2xl bg-white shadow-sm space-y-6">
         {authError && (
           <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
             {authError}
           </div>
         )}
 
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-slate-500">
           LaborIA utiliza autenticación por OAuth. Selecciona un proveedor para continuar.
         </p>
 
@@ -83,7 +83,7 @@ export const LoginForm = () => {
             variant="outline"
             onClick={handleGoogleLogin}
             disabled={isSubmitting}
-            className="w-full cursor-pointer hover:bg-primary hover:text-primary-foreground transition-colors"
+            className="w-full cursor-pointer hover:bg-blue-600 hover:text-white transition-colors bg-white shadow-sm"
           >
             <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
               <path
