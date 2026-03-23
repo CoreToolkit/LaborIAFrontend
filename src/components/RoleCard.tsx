@@ -22,7 +22,7 @@ export function RoleCard({ role, onStartInterview, onViewDetail }: RoleCardProps
 
   return (
     <article
-      className="group rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
+      className="group rounded-lg border border-border bg-card p-6 shadow-sm transition-all hover:-translate-y-1 hover:shadow-md dark:border-border"
       role="button"
       tabIndex={0}
       onClick={() => onViewDetail(role.role_id)}
@@ -36,18 +36,18 @@ export function RoleCard({ role, onStartInterview, onViewDetail }: RoleCardProps
     >
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-lg font-semibold text-gray-900">{role.role_name}</h3>
-          <div className="mt-1 flex items-center gap-2 text-xs text-gray-500">
+          <h3 className="text-lg font-semibold text-foreground">{role.role_name}</h3>
+          <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
             <Briefcase className="h-4 w-4" />
             <span>{toCategoryLabel(role.category)}</span>
             {role.seniority_level && (
-              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-gray-600">
+              <span className="rounded-full bg-muted px-2 py-0.5 text-foreground font-medium">
                 {role.seniority_level}
               </span>
             )}
           </div>
         </div>
-        <Eye className="h-5 w-5 text-gray-300 transition-colors group-hover:text-gray-500" />
+        <Eye className="h-5 w-5 text-muted-foreground transition-colors group-hover:text-foreground" />
       </div>
 
       <div className="mb-4">
@@ -55,7 +55,7 @@ export function RoleCard({ role, onStartInterview, onViewDetail }: RoleCardProps
       </div>
 
       <div className="mb-5">
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Top Skill Gaps
         </p>
         <div className="flex flex-wrap gap-2">

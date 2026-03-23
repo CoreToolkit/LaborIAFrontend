@@ -19,13 +19,13 @@ export function RoleDashboardFilters({
   onSortChange,
 }: RoleDashboardFiltersProps) {
   return (
-    <div className="grid grid-cols-1 gap-3 rounded-xl border border-gray-200 bg-white p-4 md:grid-cols-2">
-      <label className="flex flex-col gap-1">
-        <span className="text-sm font-medium text-gray-700">Categoria</span>
+    <div className="grid grid-cols-1 gap-3 rounded-lg border border-border bg-card p-4 md:grid-cols-2">
+      <label className="flex flex-col gap-2">
+        <span className="text-sm font-medium text-foreground">Categoria</span>
         <select
           value={selectedCategory}
           onChange={(event) => onCategoryChange(event.target.value)}
-          className="h-10 rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+          className="h-10 rounded-[var(--radius)] border border-border bg-card px-3 text-sm text-foreground transition-colors focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
           aria-label="Filtrar por categoria"
         >
           <option value="all">Todas</option>
@@ -37,12 +37,12 @@ export function RoleDashboardFilters({
         </select>
       </label>
 
-      <label className="flex flex-col gap-1">
-        <span className="text-sm font-medium text-gray-700">Ordenar por</span>
+      <label className="flex flex-col gap-2">
+        <span className="text-sm font-medium text-foreground">Ordenar por</span>
         <select
           value={selectedSort}
           onChange={(event) => onSortChange(event.target.value as RoleSortOption)}
-          className="h-10 rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+          className="h-10 rounded-[var(--radius)] border border-border bg-card px-3 text-sm text-foreground transition-colors focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
           aria-label="Ordenar recomendaciones"
         >
           <option value="match-desc">Match score (descendente)</option>
