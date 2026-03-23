@@ -90,7 +90,7 @@ export default function Login() {
         </div>
 
         {/* Panel Derecho - Mensaje Inspiracional */}
-        <div className="hidden lg:flex flex-1 relative overflow-hidden bg-linear-to-br from-blue-600 via-indigo-600 to-purple-600">
+        <div className="hidden lg:flex flex-1 relative overflow-hidden bg-linear-to-br from-blue-600 via-blue-700 to-blue-800">
           {/* Efecto de líneas de matriz */}
           <div className="absolute inset-0 opacity-30">
             <div className="absolute inset-0 matrix-grid" />

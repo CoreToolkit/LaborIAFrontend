@@ -136,7 +136,7 @@ export function DashboardContent() {
       <DashboardLayout>
         <div className="flex-1">
           {/* Welcome Section */}
-          <section className="border-b border-slate-200 bg-gradient-to-r from-blue-50 to-indigo-50 px-6 py-8">
+          <section className="border-b border-slate-200 bg-gradient-to-r from-blue-50 to-blue-100 px-6 py-8">
             <div className="max-w-7xl mx-auto">
               <h1 className="text-3xl font-bold text-slate-900 mb-2">Bienvenido, {profile?.nombre || "Usuario"}</h1>
               <p className="text-slate-600">Aqui encontraras todas las herramientas para mejorar tu perfil profesional y encontrar tu proximo rol.</p>
