@@ -1,7 +1,7 @@
 import React from "react";
 import Head from "next/head";
 import { useRouter } from "next/router";
-import { BriefcaseBusiness, Clock, LogOut, RefreshCw, User, AlertCircle } from "lucide-react";
+import { BriefcaseBusiness, Clock, LogOut, RefreshCw, User, AlertCircle, AudioLines } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { RoleCard } from "@/components/RoleCard";
 import { RoleDashboardFilters } from "@/components/RoleDashboardFilters";
@@ -238,6 +238,10 @@ export function DashboardContent() {
     router.push(`/interview/start?role_id=${encodeURIComponent(roleId)}`);
   };
 
+  const handleOpenInterviewRoom = () => {
+    router.push("/interviewPage");
+  };
+
   const handleViewRoleDetail = (roleId: string) => {
     setSelectedRoleId(roleId);
     setIsRoleDetailOpen(true);
@@ -352,7 +356,7 @@ export function DashboardContent() {
         </header>
 
         <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-          <section className="mb-6 rounded-xl border border-blue-100 bg-gradient-to-r from-blue-600 to-cyan-600 p-6 text-white shadow-sm">
+          <section className="mb-6 rounded-xl border border-blue-100 bg-linear-to-r from-blue-600 to-cyan-600 p-6 text-white shadow-sm">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
                 <h1 className="text-2xl font-semibold">Dashboard de Roles Recomendados</h1>
@@ -361,16 +365,27 @@ export function DashboardContent() {
                 </p>
               </div>
 
-              <Button
-                variant="secondary"
-                size="sm"
-                className="gap-2 bg-white text-blue-700 hover:bg-blue-50"
-                onClick={() => void handleRecalculate()}
-                disabled={isRecalculating}
-              >
-                <RefreshCw className={`h-4 w-4 ${isRecalculating ? "animate-spin" : ""}`} />
-                {isRecalculating ? "Recalculando..." : "Recalcular Matching"}
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="gap-2 bg-white text-blue-700 hover:bg-blue-50"
+                  onClick={handleOpenInterviewRoom}
+                >
+                  <AudioLines className="h-4 w-4" />
+                  Comenzar Entrevista
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="gap-2 bg-white text-blue-700 hover:bg-blue-50"
+                  onClick={() => void handleRecalculate()}
+                  disabled={isRecalculating}
+                >
+                  <RefreshCw className={`h-4 w-4 ${isRecalculating ? "animate-spin" : ""}`} />
+                  {isRecalculating ? "Recalculando..." : "Recalcular Matching"}
+                </Button>
+              </div>
             </div>
           </section>
 
@@ -405,7 +420,7 @@ export function DashboardContent() {
           {!isRecommendationsLoading && recommendationsError && (
             <section className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">
               <div className="flex items-start gap-3">
-                <AlertCircle className="h-5 w-5 flex-shrink-0 mt-0.5" />
+                <AlertCircle className="h-5 w-5 mt-0.5 shrink-0" />
                 <div className="flex-1">
                   <p className="font-medium">No pudimos cargar tus recomendaciones.</p>
                   <p className="mt-1 text-sm">{recommendationsError}</p>
