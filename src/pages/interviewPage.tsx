@@ -15,9 +15,13 @@ import {
 import { Button } from "@/components/ui/button";
 import PrivateRoute from "@/components/PrivateRoute";
 
-const BACKEND_WS_BASE = "wss://laboriabackend-pxfh.onrender.com/api/ws";
-const AUDIO_SAMPLE_RATE = 16000;
-const PROCESSOR_BUFFER_SIZE = 2048;
+const BACKEND_WS_BASE = process.env.NEXT_PUBLIC_BACKEND_WS_BASE;
+const AUDIO_SAMPLE_RATE = 48000;
+const PROCESSOR_BUFFER_SIZE = 1024;
+const AUDIO_FRAME_MS = 20;
+const AUDIO_FRAME_SAMPLES = Math.floor((AUDIO_SAMPLE_RATE * AUDIO_FRAME_MS) / 1000);
+const MIN_JITTER_BUFFER_MS = 100;
+const MAX_JITTER_BUFFER_MS = 220;
 
 type SignalingMessage = {
     event: string;
@@ -37,6 +41,7 @@ type RemotePlaybackState = {
     queue: Float32Array[];
     isPlaying: boolean;
     nextTime: number;
+    targetBufferMs: number;
 };
 
 const createDefaultRoomId = (): string => {
@@ -129,6 +134,7 @@ function InterviewPageContent() {
     const localAudioContextRef = React.useRef<AudioContext | null>(null);
     const localSourceNodeRef = React.useRef<MediaStreamAudioSourceNode | null>(null);
     const localProcessorNodeRef = React.useRef<ScriptProcessorNode | null>(null);
+    const pendingCaptureSamplesRef = React.useRef<number[]>([]);
     const localMonitorCleanupRef = React.useRef<(() => void) | null>(null);
 
     const playbackContextRef = React.useRef<AudioContext | null>(null);
@@ -239,6 +245,11 @@ function InterviewPageContent() {
             return;
         }
 
+        const queueMsBeforeStart = state.queue.length * AUDIO_FRAME_MS;
+        if (queueMsBeforeStart < state.targetBufferMs) {
+            return;
+        }
+
         state.isPlaying = true;
 
         const playNext = () => {
@@ -251,20 +262,28 @@ function InterviewPageContent() {
             if (!chunk) {
                 latest.isPlaying = false;
                 latest.nextTime = playbackContext.currentTime;
+                latest.targetBufferMs = Math.min(MAX_JITTER_BUFFER_MS, latest.targetBufferMs + 20);
                 return;
             }
 
             const audioBuffer = playbackContext.createBuffer(1, chunk.length, AUDIO_SAMPLE_RATE);
             const channelData = Float32Array.from(chunk);
-            audioBuffer.copyToChannel(channelData, 0);
+            audioBuffer.getChannelData(0).set(channelData);
 
             const source = playbackContext.createBufferSource();
             source.buffer = audioBuffer;
             source.connect(playbackContext.destination);
 
-            const startAt = Math.max(playbackContext.currentTime + 0.03, latest.nextTime || 0);
+            const queueMs = latest.queue.length * AUDIO_FRAME_MS;
+            source.playbackRate.value = 1;
+
+            const startAt = Math.max(playbackContext.currentTime + 0.005, latest.nextTime || 0);
             source.start(startAt);
             latest.nextTime = startAt + audioBuffer.duration;
+
+            if (queueMs <= latest.targetBufferMs + 20) {
+                latest.targetBufferMs = Math.max(MIN_JITTER_BUFFER_MS, latest.targetBufferMs - 2);
+            }
 
             source.onended = () => {
                 playNext();
@@ -294,6 +313,7 @@ function InterviewPageContent() {
                 queue: [samples],
                 isPlaying: false,
                 nextTime: 0,
+                targetBufferMs: MIN_JITTER_BUFFER_MS,
             });
         }
 
@@ -335,6 +355,8 @@ function InterviewPageContent() {
     }, []);
 
     const stopLocalPublisher = React.useCallback(async () => {
+        pendingCaptureSamplesRef.current = [];
+
         if (localProcessorNodeRef.current) {
             localProcessorNodeRef.current.onaudioprocess = null;
             localProcessorNodeRef.current.disconnect();
@@ -374,8 +396,24 @@ function InterviewPageContent() {
             }
 
             const input = event.inputBuffer.getChannelData(0);
-            const pcmBytes = float32ToPCM16(input);
-            sendAudioBytes(pcmBytes);
+            const pending = pendingCaptureSamplesRef.current;
+
+            for (let i = 0; i < input.length; i += 1) {
+                pending.push(input[i] ?? 0);
+            }
+
+            while (pending.length >= AUDIO_FRAME_SAMPLES) {
+                const frame = new Float32Array(AUDIO_FRAME_SAMPLES);
+
+                for (let i = 0; i < AUDIO_FRAME_SAMPLES; i += 1) {
+                    frame[i] = pending[i] ?? 0;
+                }
+
+                pending.splice(0, AUDIO_FRAME_SAMPLES);
+
+                const pcmBytes = float32ToPCM16(frame);
+                sendAudioBytes(pcmBytes);
+            }
         };
 
         sourceNode.connect(processorNode);
@@ -476,6 +514,8 @@ function InterviewPageContent() {
 
             const localStream = await navigator.mediaDevices.getUserMedia({
                 audio: {
+                    channelCount: 1,
+                    sampleRate: AUDIO_SAMPLE_RATE,
                     echoCancellation: true,
                     noiseSuppression: true,
                     autoGainControl: true,
