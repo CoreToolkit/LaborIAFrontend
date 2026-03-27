@@ -139,6 +139,7 @@ function InterviewPageContent() {
     const mediaRecorderRef = React.useRef<MediaRecorder | null>(null);
     const selectedMimeTypeRef = React.useRef("");
     const selfIdRef = React.useRef("");
+    const lastRecorderRestartAtRef = React.useRef(0);
     const localMonitorCleanupRef = React.useRef<(() => void) | null>(null);
 
     const senderPlayersRef = React.useRef<Map<string, SenderPlayer>>(new Map());
@@ -482,6 +483,30 @@ function InterviewPageContent() {
         }
     }, [isMuted]);
 
+    const restartRecorderForNewPeer = React.useCallback((silent = false) => {
+        const stream = localStreamRef.current;
+        if (!stream) {
+            return;
+        }
+
+        const now = Date.now();
+        if (now - lastRecorderRestartAtRef.current < 900) {
+            return;
+        }
+        lastRecorderRestartAtRef.current = now;
+
+        stopRecorder();
+        const started = startRecorder(stream);
+        if (!started) {
+            setErrorMessage("No se pudo resincronizar el audio local. Intenta salir y volver a entrar.");
+            return;
+        }
+
+        if (!silent) {
+            console.log("[audio-capture] Reiniciando MediaRecorder para sincronizar con nuevo participante");
+        }
+    }, [startRecorder, stopRecorder]);
+
     const leaveRoom = React.useCallback(async () => {
         const currentSelfId = selfIdRef.current;
 
@@ -694,6 +719,14 @@ function InterviewPageContent() {
                         connected: true,
                         level: current?.level || 0,
                     }));
+
+                    // Reenviar segmentos iniciales para que el peer nuevo pueda decodificar nuestro stream.
+                    restartRecorderForNewPeer(true);
+                    return;
+                }
+
+                if (payload.event === "request_resync") {
+                    restartRecorderForNewPeer(true);
                     return;
                 }
 
@@ -710,7 +743,7 @@ function InterviewPageContent() {
         } finally {
             setIsConnecting(false);
         }
-    }, [appendChunkForSender, cleanupSenderPlayer, leaveRoom, markRemoteActivity, removeParticipant, roomId, sendJson, startAudioLevelMonitor, startRecorder, unlockPlayback, updateParticipant, displayName]);
+    }, [appendChunkForSender, cleanupSenderPlayer, leaveRoom, markRemoteActivity, removeParticipant, restartRecorderForNewPeer, roomId, sendJson, startAudioLevelMonitor, startRecorder, unlockPlayback, updateParticipant, displayName]);
 
     const toggleMute = () => {
         const localStream = localStreamRef.current;
