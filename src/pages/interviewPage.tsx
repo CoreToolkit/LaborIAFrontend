@@ -89,17 +89,41 @@ function InterviewPageContent() {
 
   const socketRef = React.useRef<WebSocket | null>(null);
   const localStreamRef = React.useRef<MediaStream | null>(null);
+  const selfIdRef = React.useRef("");
   const peerConnectionsRef = React.useRef<Map<string, RTCPeerConnection>>(new Map());
   const remoteMonitorsRef = React.useRef<Map<string, () => void>>(new Map());
   const audioElementsRef = React.useRef<Map<string, HTMLAudioElement>>(new Map());
   const localMonitorCleanupRef = React.useRef<(() => void) | null>(null);
+  const introduceIntervalRef = React.useRef<number | null>(null);
+
+  const unlockPlayback = React.useCallback(async () => {
+    console.log("[unlockPlayback] Iniciando...");
+    try {
+      const primerAudio = new Audio();
+      primerAudio.muted = true;
+      const playPromise = primerAudio.play();
+      // No esperar el resultado, solo triggear el play
+      if (playPromise && typeof playPromise.catch === "function") {
+        playPromise.catch(() => {
+          // Silenciar errores - esto es solo para unlock
+        });
+      }
+      primerAudio.pause();
+      console.log("[unlockPlayback] ✓ Completado");
+    } catch (err) {
+      console.warn("[unlockPlayback] Advertencia (continúa):", err);
+    }
+  }, []);
 
   const sendSignal = React.useCallback((message: SignalingMessage) => {
+    console.log("[sendSignal] Intentando enviar:", message.event, "target:", message.target);
     const socket = socketRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) {
+      console.error("[sendSignal] Socket no está abierto. Estado:", socket?.readyState);
       return;
     }
 
+    console.log("[sendSignal] ✓ Enviando mensaje:", JSON.stringify(message).slice(0, 100));
     socket.send(JSON.stringify(message));
   }, []);
 
@@ -176,6 +200,14 @@ function InterviewPageContent() {
     const audioElement = audioElementsRef.current.get(socketId);
     if (audioElement) {
       audioElement.srcObject = null;
+      audioElement.pause();
+      
+      // Remover del DOM
+      if (audioElement.parentNode) {
+        audioElement.parentNode.removeChild(audioElement);
+        console.log("[cleanupPeer] Audio element removido del DOM para:", socketId);
+      }
+      
       audioElementsRef.current.delete(socketId);
     }
 
@@ -192,29 +224,39 @@ function InterviewPageContent() {
   }, [removeParticipant]);
 
   const createPeerConnection = React.useCallback((peerId: string): RTCPeerConnection => {
+    console.log("[createPeerConnection] Creando conexión para:", peerId);
     const existing = peerConnectionsRef.current.get(peerId);
     if (existing) {
+      console.log("[createPeerConnection] Ya existe, retornando existente");
       return existing;
     }
 
     const peerConnection = new RTCPeerConnection({ iceServers: ICE_SERVERS });
     peerConnectionsRef.current.set(peerId, peerConnection);
+    console.log("[createPeerConnection] ✓ Nueva RTCPeerConnection creada");
 
     const localStream = localStreamRef.current;
     if (localStream) {
+      console.log("[createPeerConnection] Agregando tracks locales...");
       localStream.getTracks().forEach((track) => {
         peerConnection.addTrack(track, localStream);
       });
+      console.log("[createPeerConnection] ✓ Tracks agregados");
+    } else {
+      console.warn("[createPeerConnection] No hay localStream disponible");
     }
 
     peerConnection.onicecandidate = (event) => {
-      if (!event.candidate || !selfId) {
+      const senderId = selfIdRef.current;
+      if (!event.candidate || !senderId) {
         return;
       }
 
+      console.log("[createPeerConnection] Enviando ICE candidate a:", peerId);
       sendSignal({
         event: "webrtc-ice-candidate",
-        from: selfId,
+        from: senderId,
+        user_id: senderId,
         target: peerId,
         candidate: event.candidate.toJSON(),
       });
@@ -225,19 +267,46 @@ function InterviewPageContent() {
       if (!remoteStream) {
         return;
       }
+      console.log("[createPeerConnection] Track remoto recibido de:", peerId);
 
       let audioElement = audioElementsRef.current.get(peerId);
       if (!audioElement) {
         audioElement = new Audio();
         audioElement.autoplay = true;
+        audioElement.muted = false;
+        audioElement.volume = 1;
+        audioElement.preload = "auto";
         audioElement.setAttribute("playsinline", "true");
+        audioElement.id = `audio-${peerId}`;
+
+        audioElement.onloadedmetadata = () => {
+          void audioElement?.play().catch((err) => {
+            console.error("[createPeerConnection] ✗ Error play() onloadedmetadata:", err?.name, err?.message);
+          });
+        };
+        
+        // Agregar al DOM para que se reproduzca
+        document.body.appendChild(audioElement);
+        console.log("[createPeerConnection] Audio element agregado al DOM para:", peerId);
+        
         audioElementsRef.current.set(peerId, audioElement);
       }
 
       audioElement.srcObject = remoteStream;
-      void audioElement.play().catch(() => {
-        return;
+      console.log("[createPeerConnection] srcObject asignado, iniciando reproducción");
+      void audioElement.play().catch((err) => {
+          console.error("[createPeerConnection] ✗ Error reproduciendo audio:", err?.name, err?.message);
       });
+
+      const [remoteTrack] = remoteStream.getAudioTracks();
+      if (remoteTrack) {
+        console.log(
+          "[createPeerConnection] Estado track remoto:",
+          "enabled=", remoteTrack.enabled,
+          "muted=", remoteTrack.muted,
+          "readyState=", remoteTrack.readyState,
+        );
+      }
 
       if (!remoteMonitorsRef.current.has(peerId)) {
         const cleanupMonitor = startAudioLevelMonitor(remoteStream, (level) => {
@@ -255,6 +324,7 @@ function InterviewPageContent() {
 
     peerConnection.onconnectionstatechange = () => {
       const state = peerConnection.connectionState;
+      console.log("[createPeerConnection] connectionState", peerId, state);
 
       if (state === "connected") {
         updateParticipant(peerId, (current) => ({
@@ -270,76 +340,124 @@ function InterviewPageContent() {
       }
     };
 
-    return peerConnection;
-  }, [cleanupPeer, selfId, sendSignal, startAudioLevelMonitor, updateParticipant]);
+    peerConnection.oniceconnectionstatechange = () => {
+      console.log("[createPeerConnection] iceConnectionState", peerId, peerConnection.iceConnectionState);
+    };
 
-  const createOfferForPeer = React.useCallback(async (peerId: string) => {
-    if (!selfId) {
+    return peerConnection;
+  }, [cleanupPeer, sendSignal, startAudioLevelMonitor, updateParticipant]);
+
+  const createOfferForPeer = React.useCallback(async (peerId: string, fromUserId: string) => {
+    console.log("[createOfferForPeer] Iniciando para peer:", peerId, "desde:", fromUserId);
+    if (!fromUserId) {
+      console.warn("[createOfferForPeer] fromUserId no existe, abortando");
       return;
     }
 
     const peerConnection = createPeerConnection(peerId);
     if (peerConnection.localDescription) {
+      console.log("[createOfferForPeer] Ya existe localDescription, abortando");
       return;
     }
 
-    const offer = await peerConnection.createOffer({
-      offerToReceiveAudio: true,
-      offerToReceiveVideo: false,
-    });
+    try {
+      const offer = await peerConnection.createOffer({
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: false,
+      });
+      console.log("[createOfferForPeer] Offer creada, estableciendo localDescription");
 
-    await peerConnection.setLocalDescription(offer);
+      await peerConnection.setLocalDescription(offer);
+      console.log("[createOfferForPeer] LocalDescription establecida, enviando offer");
 
-    sendSignal({
-      event: "webrtc-offer",
-      from: selfId,
-      target: peerId,
-      sdp: offer,
-    });
-  }, [createPeerConnection, selfId, sendSignal]);
+      sendSignal({
+        event: "webrtc-offer",
+        from: fromUserId,
+        user_id: fromUserId,
+        target: peerId,
+        sdp: offer,
+      });
+      console.log("[createOfferForPeer] ✓ Offer enviada a:", peerId);
+    } catch (err) {
+      console.error("[createOfferForPeer] Error creando offer:", err);
+    }
+  }, [createPeerConnection, sendSignal]);
 
-  const handleOffer = React.useCallback(async ({ from, sdp }: SignalSdpPayload) => {
-    if (!selfId) {
+  const handleOffer = React.useCallback(async ({ from, sdp }: SignalSdpPayload, sessionUserId: string) => {
+    console.log("[handleOffer] Offer recibida de:", from, "respondiendo como:", sessionUserId);
+    if (!sessionUserId) {
+      console.warn("[handleOffer] sessionUserId no existe");
       return;
     }
 
-    const peerConnection = createPeerConnection(from);
+    try {
+      const peerConnection = createPeerConnection(from);
 
-    await peerConnection.setRemoteDescription(new RTCSessionDescription(sdp));
-    const answer = await peerConnection.createAnswer();
-    await peerConnection.setLocalDescription(answer);
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(sdp));
+      console.log("[handleOffer] RemoteDescription establecida");
+      
+      const answer = await peerConnection.createAnswer();
+      console.log("[handleOffer] Answer creada");
+      
+      await peerConnection.setLocalDescription(answer);
+      console.log("[handleOffer] LocalDescription establecida");
 
-    sendSignal({
-      event: "webrtc-answer",
-      from: selfId,
-      target: from,
-      sdp: answer,
-    });
-  }, [createPeerConnection, selfId, sendSignal]);
+      sendSignal({
+        event: "webrtc-answer",
+        from: sessionUserId,
+        user_id: sessionUserId,
+        target: from,
+        sdp: answer,
+      });
+      console.log("[handleOffer] ✓ Answer enviada a:", from);
+    } catch (err) {
+      console.error("[handleOffer] Error:", err);
+    }
+  }, [createPeerConnection, sendSignal]);
 
   const handleAnswer = React.useCallback(async ({ from, sdp }: SignalSdpPayload) => {
+    console.log("[handleAnswer] Answer recibida de:", from);
     const peerConnection = peerConnectionsRef.current.get(from);
     if (!peerConnection) {
+      console.warn("[handleAnswer] No hay PeerConnection para:", from);
       return;
     }
 
-    await peerConnection.setRemoteDescription(new RTCSessionDescription(sdp));
+    try {
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(sdp));
+      console.log("[handleAnswer] ✓ RemoteDescription establecida");
+    } catch (err) {
+      console.error("[handleAnswer] Error:", err);
+    }
   }, []);
 
   const handleIceCandidate = React.useCallback(async ({ from, candidate }: SignalIcePayload) => {
+    console.log("[handleIceCandidate] Candidato recibido de:", from);
     const peerConnection = peerConnectionsRef.current.get(from);
     if (!peerConnection) {
+      console.warn("[handleIceCandidate] No hay PeerConnection para:", from);
       return;
     }
 
-    await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+    try {
+      await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+      console.log("[handleIceCandidate] ✓ Candidato agregado");
+    } catch (err) {
+      console.error("[handleIceCandidate] Error:", err);
+    }
   }, []);
 
   const leaveRoom = React.useCallback(async () => {
     setConnectionStatus("disconnected");
     setIsJoined(false);
+    selfIdRef.current = "";
     setSelfId("");
     setParticipants([]);
+
+    if (introduceIntervalRef.current !== null) {
+      window.clearInterval(introduceIntervalRef.current);
+      introduceIntervalRef.current = null;
+    }
 
     if (localMonitorCleanupRef.current) {
       localMonitorCleanupRef.current();
@@ -358,6 +476,10 @@ function InterviewPageContent() {
 
     audioElementsRef.current.forEach((audioElement) => {
       audioElement.srcObject = null;
+      audioElement.pause();
+      if (audioElement.parentNode) {
+        audioElement.parentNode.removeChild(audioElement);
+      }
     });
     audioElementsRef.current.clear();
 
@@ -381,6 +503,7 @@ function InterviewPageContent() {
   }, [selfId, sendSignal]);
 
   const joinRoom = React.useCallback(async () => {
+    console.log("[joinRoom] Iniciando función");
     const safeRoomId = roomId.trim();
     const safeDisplayName = displayName.trim();
 
@@ -397,8 +520,14 @@ function InterviewPageContent() {
     setIsConnecting(true);
     setErrorMessage(null);
     setConnectionStatus("connecting");
+    console.log("[joinRoom] Estados iniciales configurados");
 
     try {
+      console.log("[joinRoom] Antes de unlockPlayback");
+      await unlockPlayback();
+      console.log("[joinRoom] unlockPlayback completado");
+
+      console.log("[joinRoom] Solicitando getUserMedia...");
       const localStream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
@@ -407,6 +536,7 @@ function InterviewPageContent() {
         },
         video: false,
       });
+      console.log("[joinRoom] getUserMedia exitoso, stream obtenido:", localStream);
 
       localStreamRef.current = localStream;
       setIsMuted(false);
@@ -416,15 +546,21 @@ function InterviewPageContent() {
       });
 
       const sessionUserId = normalizeUserId(safeDisplayName);
+      selfIdRef.current = sessionUserId;
       setSelfId(sessionUserId);
+      console.log("[joinRoom] sessionUserId generado:", sessionUserId);
 
       const encodedRoom = encodeURIComponent(safeRoomId);
       const encodedUser = encodeURIComponent(sessionUserId);
-      const socket = new WebSocket(`${BACKEND_WS_BASE}/${encodedRoom}/${encodedUser}`);
+      const wsUrl = `${BACKEND_WS_BASE}/${encodedRoom}/${encodedUser}`;
+      console.log("[joinRoom] Intentando conectar a WebSocket:", wsUrl);
+      console.log("[joinRoom] WebSocket object creado, esperando eventos...");
 
+      const socket = new WebSocket(wsUrl);
       socketRef.current = socket;
 
       socket.onopen = () => {
+        console.log("[joinRoom] ✓ WebSocket abierto exitosamente");
         setConnectionStatus("connected");
         setIsJoined(true);
 
@@ -434,17 +570,58 @@ function InterviewPageContent() {
           user_id: sessionUserId,
           displayName: safeDisplayName,
         });
+
+        // Retry lightweight peer discovery to tolerate missed join events.
+        introduceIntervalRef.current = window.setInterval(() => {
+          sendSignal({
+            event: "webrtc-introduce",
+            from: sessionUserId,
+            user_id: sessionUserId,
+            displayName: safeDisplayName,
+          });
+        }, 4000);
       };
 
       socket.onclose = () => {
+        console.log("[joinRoom] WebSocket cerrado");
         setConnectionStatus("disconnected");
       };
 
-      socket.onerror = () => {
-        setErrorMessage("No fue posible abrir la conexion websocket.");
+      socket.onerror = (event: Event) => {
+        const errorMsg = "Error en conexión WebSocket";
+        console.error("[joinRoom] ✗ Error WebSocket evento:", event);
+        console.error("[joinRoom] ✗ Error message:", errorMsg);
+        setErrorMessage(`Error conectando: ${errorMsg}. Revisa firewall, CORS, y que el backend esté disponible.`);
       };
 
-      socket.onmessage = (event) => {
+      socket.onmessage = (event: MessageEvent) => {
+        // Manejo de BYTES (audio from backend)
+        if (event.data instanceof ArrayBuffer) {
+          console.log("[joinRoom] Recibido ArrayBuffer (audio bytes)");
+          try {
+            const buffer = new Uint8Array(event.data);
+            if (buffer.length < 2) return;
+
+            // Parse frame: [user_id_length] + user_id + audio_bytes
+            const userIdLength = buffer[0];
+            if (userIdLength === 0 || buffer.length < 1 + userIdLength) return;
+
+            const userIdBytes = buffer.slice(1, 1 + userIdLength);
+            const userId = new TextDecoder().decode(userIdBytes);
+            const audioBytes = buffer.slice(1 + userIdLength);
+
+            console.log("[joinRoom] Audio recibido de:", userId, "bytes:", audioBytes.length);
+
+            // El audio viene por WebRTC tracks, esto es solo logged como referencia
+          } catch (err) {
+            console.error("[joinRoom] Error procesando audio bytes:", err);
+          }
+          return;
+        }
+
+        // Manejo de TEXT (JSON signaling)
+        console.log("[InterviewPage] Mensaje WebSocket recibido:", typeof event.data === "string" ? event.data.slice(0, 100) : event.data);
+        
         if (typeof event.data !== "string") {
           return;
         }
@@ -452,13 +629,16 @@ function InterviewPageContent() {
         let payload: SignalingMessage | null = null;
         try {
           payload = JSON.parse(event.data) as SignalingMessage;
-        } catch {
+        } catch (e) {
+          console.warn("[InterviewPage] No se pudo parsear payload:", event.data.slice(0, 100), e);
           return;
         }
 
         if (!payload || !payload.event) {
           return;
         }
+
+        console.log("[InterviewPage] Evento de señalización:", payload.event, "de:", payload.from || payload.user_id);
 
         const senderId = payload.from || payload.user_id || "";
         if (senderId === sessionUserId) {
@@ -467,6 +647,7 @@ function InterviewPageContent() {
 
         const isTargeted = !payload.target || payload.target === sessionUserId;
         if (!isTargeted) {
+          console.log("[InterviewPage] Mensaje no dirigido a nosotros, ignorando.");
           return;
         }
 
@@ -474,6 +655,8 @@ function InterviewPageContent() {
           if (!senderId) {
             return;
           }
+
+          console.log("[InterviewPage] Peer incluido en sala:", senderId, "displayName:", payload.displayName);
 
           updateParticipant(senderId, (current) => ({
             socketId: senderId,
@@ -484,43 +667,43 @@ function InterviewPageContent() {
             level: current?.level || 0,
           }));
 
+          // Deterministic initiator: smallest ID creates the offer.
           if (sessionUserId.localeCompare(senderId) < 0) {
-            void createOfferForPeer(senderId);
+            void createOfferForPeer(senderId, sessionUserId);
           }
 
-          return;
-        }
-
-        if (payload.event === "leave" || payload.event === "user_left") {
-          if (!senderId) {
-            return;
-          }
-          cleanupPeer(senderId);
           return;
         }
 
         if (payload.event === "webrtc-offer" && senderId && payload.sdp) {
-          void handleOffer({ from: senderId, sdp: payload.sdp });
+          console.log("[InterviewPage] Offer recibida de:", senderId);
+          void handleOffer({ from: senderId, sdp: payload.sdp }, sessionUserId);
           return;
         }
 
         if (payload.event === "webrtc-answer" && senderId && payload.sdp) {
+          console.log("[InterviewPage] Answer recibida de:", senderId);
           void handleAnswer({ from: senderId, sdp: payload.sdp });
           return;
         }
 
         if (payload.event === "webrtc-ice-candidate" && senderId && payload.candidate) {
+          console.log("[InterviewPage] ICE candidate recibida de:", senderId);
           void handleIceCandidate({ from: senderId, candidate: payload.candidate });
         }
       };
     } catch (error) {
-      const fallback = "No fue posible conectarte a la sala. Revisa permisos de microfono y vuelve a intentar.";
-      setErrorMessage(error instanceof Error && error.message ? error.message : fallback);
+      console.error("[joinRoom] ✗ Error en try-catch:", error);
+      const fallback = "No fue posible conectarte a la sala. Revisa permisos de micrófono y vuelve a intentar.";
+      const msg = error instanceof Error && error.message ? error.message : fallback;
+      console.error("[joinRoom] ✗ Mensaje de error final:", msg);
+      setErrorMessage(msg);
       await leaveRoom();
     } finally {
+      console.log("[joinRoom] Finalizando joinRoom, setIsConnecting(false)");
       setIsConnecting(false);
     }
-  }, [cleanupPeer, createOfferForPeer, displayName, handleAnswer, handleIceCandidate, handleOffer, leaveRoom, roomId, sendSignal, startAudioLevelMonitor, updateParticipant]);
+  }, [createOfferForPeer, displayName, handleAnswer, handleIceCandidate, handleOffer, leaveRoom, roomId, sendSignal, startAudioLevelMonitor, unlockPlayback, updateParticipant]);
 
   const toggleMute = () => {
     const localStream = localStreamRef.current;
@@ -540,7 +723,7 @@ function InterviewPageContent() {
     try {
       await navigator.clipboard.writeText(roomId);
     } catch {
-      setErrorMessage("No se pudo copiar el Room ID automaticamente.");
+      setErrorMessage("No se pudo copiar el Room ID automáticamente.");
     }
   };
 
@@ -580,7 +763,7 @@ function InterviewPageContent() {
               <div>
                 <h1 className="text-2xl font-semibold">Sala de entrevista por audio</h1>
                 <p className="mt-2 text-sm text-cyan-50">
-                  Conecta varios participantes en tiempo real. Cada nuevo integrante se enlaza por WebRTC con todos los demas en la sala.
+                  Conecta varios participantes en tiempo real. Cada nuevo integrante se enlaza por WebRTC con todos los demás en la sala.
                 </p>
               </div>
               <div className="flex items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-xs font-medium text-white">
@@ -659,7 +842,7 @@ function InterviewPageContent() {
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <Button type="button" variant="outline" onClick={toggleMute} disabled={!isJoined} className="gap-2">
                 {isMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-                {isMuted ? "Activar microfono" : "Silenciar microfono"}
+                {isMuted ? "Activar micrófono" : "Silenciar micrófono"}
               </Button>
               <span className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-medium text-cyan-700">
                 <Users className="mr-1 inline h-3.5 w-3.5" />
@@ -676,7 +859,7 @@ function InterviewPageContent() {
               </div>
               <p className="text-base font-semibold text-cyan-900">{localName}</p>
               <p className="mt-2 text-sm text-cyan-700">
-                {isMuted ? "Microfono silenciado" : "Microfono activo"}
+                {isMuted ? "Micrófono silenciado" : "Micrófono activo"}
               </p>
               <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-cyan-100">
                 <div
@@ -698,7 +881,7 @@ function InterviewPageContent() {
 
               {participants.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
-                  No hay participantes remotos aun. Comparte el Room ID y espera a que ingresen.
+                  No hay participantes remotos aún. Comparte el Room ID y espera a que ingresen.
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
