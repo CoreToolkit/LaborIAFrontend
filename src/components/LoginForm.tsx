@@ -63,29 +63,29 @@ export const LoginForm = () => {
     <div className="w-full max-w-md space-y-6 ">
       {/* Logo */}
       <div className="flex items-center gap-2">
-        <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
+        <div className="h-10 w-10 bg-blue-600 rounded-lg flex items-center justify-center">
           <Clock className="w-6 h-6 text-white" />
         </div>
-        <span className="text-xl font-semibold">LaborIA</span>
+        <span className="text-xl font-semibold text-slate-900">LaborIA</span>
       </div>
 
       {/* Título */}
       <div className="space-y-2">
-        <h1 className="text-3xl font-bold tracking-tight">Bienvenido de nuevo</h1>
-        <p className="text-sm text-muted-foreground">
+        <h1 className="text-3xl font-bold tracking-tight text-slate-900">Bienvenido de nuevo</h1>
+        <p className="text-sm text-slate-500">
           Inicia sesión con tu cuenta de Google o Microsoft.
         </p>
       </div>
 
       {/* Contenedor con borde para el formulario completo */}
-      <div className="p-8 border-2 border-gray-200 rounded-xl bg-white shadow-sm space-y-6">
+      <div className="p-8 border border-slate-200 rounded-2xl bg-white shadow-sm space-y-6">
         {authError && (
           <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
             {authError}
           </div>
         )}
 
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-slate-500">
           LaborIA utiliza autenticación por OAuth. Selecciona un proveedor para continuar.
         </p>
 
@@ -96,7 +96,7 @@ export const LoginForm = () => {
             variant="outline"
             onClick={handleGoogleLogin}
             disabled={isSubmitting}
-            className="w-full cursor-pointer hover:bg-blue-600 hover:text-white transition-colors"
+            className="w-full cursor-pointer hover:bg-blue-600 hover:text-white transition-colors bg-white shadow-sm"
           >
             <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
               <path
@@ -127,10 +127,10 @@ export const LoginForm = () => {
             className="w-full cursor-pointer hover:bg-blue-600 hover:text-white transition-colors"
           >
             <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
-              <path fill="#f35325" d="M0 0h11.377v11.372H0z" />
-              <path fill="#81bc06" d="M12.623 0H24v11.372H12.623z" />
-              <path fill="#05a6f0" d="M0 12.628h11.377V24H0z" />
-              <path fill="#ffba08" d="M12.623 12.628H24V24H12.623z" />
+              <path fill="#2563eb" d="M0 0h11.377v11.372H0z" />
+              <path fill="#2563eb" d="M12.623 0H24v11.372H12.623z" />
+              <path fill="#2563eb" d="M0 12.628h11.377V24H0z" />
+              <path fill="#2563eb" d="M12.623 12.628H24V24H12.623z" />
             </svg>
             Microsoft
           </Button>
