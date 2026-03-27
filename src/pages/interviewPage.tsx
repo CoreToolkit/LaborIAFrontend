@@ -16,12 +16,16 @@ import { Button } from "@/components/ui/button";
 import PrivateRoute from "@/components/PrivateRoute";
 
 const BACKEND_WS_BASE = process.env.NEXT_PUBLIC_BACKEND_WS_BASE;
-const AUDIO_SAMPLE_RATE = 48000;
-const PROCESSOR_BUFFER_SIZE = 1024;
-const AUDIO_FRAME_MS = 20;
-const AUDIO_FRAME_SAMPLES = Math.floor((AUDIO_SAMPLE_RATE * AUDIO_FRAME_MS) / 1000);
-const MIN_JITTER_BUFFER_MS = 100;
-const MAX_JITTER_BUFFER_MS = 220;
+const CLIENT_MAGIC_A = 67; // 'C'
+const CLIENT_MAGIC_B = 65; // 'A'
+const MAX_QUEUE_PER_SENDER = 60;
+
+const MIME_CANDIDATES = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/mp4",
+    "audio/ogg;codecs=opus",
+];
 
 type SignalingMessage = {
     event: string;
@@ -37,11 +41,20 @@ type RemoteParticipant = {
     level: number;
 };
 
-type RemotePlaybackState = {
-    queue: Float32Array[];
-    isPlaying: boolean;
-    nextTime: number;
-    targetBufferMs: number;
+type UnwrappedIncomingAudio = {
+    mimeType: string | null;
+    audioBuffer: ArrayBuffer | null;
+};
+
+type SenderPlayer = {
+    audio: HTMLAudioElement;
+    mediaSource: MediaSource;
+    sourceBuffer: SourceBuffer | null;
+    queue: ArrayBuffer[];
+    mimeType: string;
+    sourceBufferReady: boolean;
+    isRemoving: boolean;
+    appendErrorCount: number;
 };
 
 const createDefaultRoomId = (): string => {
@@ -68,48 +81,43 @@ const normalizeUserLabel = (name: string, socketId: string): string => {
     return `Usuario-${socketId.slice(0, 5)}`;
 };
 
-const pcm16ToFloat32 = (payload: Uint8Array): Float32Array => {
-    const sampleCount = Math.floor(payload.byteLength / 2);
-    const result = new Float32Array(sampleCount);
-
-    for (let i = 0; i < sampleCount; i += 1) {
-        const lo = payload[i * 2] ?? 0;
-        const hi = payload[i * 2 + 1] ?? 0;
-        const value = (hi << 8) | lo;
-        const signed = value >= 0x8000 ? value - 0x10000 : value;
-        result[i] = Math.max(-1, Math.min(1, signed / 32768));
+const pickSupportedMimeType = (): string => {
+    for (const candidate of MIME_CANDIDATES) {
+        if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(candidate)) {
+            return candidate;
+        }
     }
-
-    return result;
+    return "";
 };
 
-const float32ToPCM16 = (input: Float32Array): Uint8Array => {
-    const bytes = new Uint8Array(input.length * 2);
-
-    for (let i = 0; i < input.length; i += 1) {
-        const sample = Math.max(-1, Math.min(1, input[i] ?? 0));
-        const intSample = sample < 0 ? Math.round(sample * 0x8000) : Math.round(sample * 0x7fff);
-        const value = intSample < 0 ? intSample + 0x10000 : intSample;
-
-        bytes[i * 2] = value & 0xff;
-        bytes[i * 2 + 1] = (value >> 8) & 0xff;
-    }
-
-    return bytes;
+const wrapChunkWithClientHeader = (audioBuffer: ArrayBuffer, mimeType: string): ArrayBuffer => {
+    const mimeBytes = new TextEncoder().encode(mimeType || "");
+    const audioBytes = new Uint8Array(audioBuffer);
+    const out = new Uint8Array(3 + mimeBytes.length + audioBytes.length);
+    out[0] = CLIENT_MAGIC_A;
+    out[1] = CLIENT_MAGIC_B;
+    out[2] = Math.min(255, mimeBytes.length);
+    out.set(mimeBytes.slice(0, 255), 3);
+    out.set(audioBytes, 3 + Math.min(255, mimeBytes.length));
+    return out.buffer;
 };
 
-const calculateRms = (samples: Float32Array): number => {
-    if (!samples.length) {
-        return 0;
+const unwrapIncomingAudioPayload = (audioData: ArrayBuffer): UnwrappedIncomingAudio => {
+    const payload = new Uint8Array(audioData);
+    if (payload.length >= 3 && payload[0] === CLIENT_MAGIC_A && payload[1] === CLIENT_MAGIC_B) {
+        const mimeLen = payload[2];
+        if (payload.length <= 3 + mimeLen) {
+            return { mimeType: null, audioBuffer: null };
+        }
+
+        const mimeType = new TextDecoder().decode(payload.slice(3, 3 + mimeLen));
+        const audioBytes = payload.slice(3 + mimeLen);
+        const copy = new Uint8Array(audioBytes.length);
+        copy.set(audioBytes);
+        return { mimeType, audioBuffer: copy.buffer };
     }
 
-    let sumSquares = 0;
-    for (let i = 0; i < samples.length; i += 1) {
-        const s = samples[i] ?? 0;
-        sumSquares += s * s;
-    }
-
-    return Math.sqrt(sumSquares / samples.length);
+    return { mimeType: null, audioBuffer: audioData.slice(0) };
 };
 
 function InterviewPageContent() {
@@ -128,17 +136,12 @@ function InterviewPageContent() {
 
     const socketRef = React.useRef<WebSocket | null>(null);
     const localStreamRef = React.useRef<MediaStream | null>(null);
+    const mediaRecorderRef = React.useRef<MediaRecorder | null>(null);
+    const selectedMimeTypeRef = React.useRef("");
     const selfIdRef = React.useRef("");
-    const isMutedRef = React.useRef(false);
-
-    const localAudioContextRef = React.useRef<AudioContext | null>(null);
-    const localSourceNodeRef = React.useRef<MediaStreamAudioSourceNode | null>(null);
-    const localProcessorNodeRef = React.useRef<ScriptProcessorNode | null>(null);
-    const pendingCaptureSamplesRef = React.useRef<number[]>([]);
     const localMonitorCleanupRef = React.useRef<(() => void) | null>(null);
 
-    const playbackContextRef = React.useRef<AudioContext | null>(null);
-    const remotePlaybackRef = React.useRef<Map<string, RemotePlaybackState>>(new Map());
+    const senderPlayersRef = React.useRef<Map<string, SenderPlayer>>(new Map());
     const remoteLevelResetTimeoutsRef = React.useRef<Map<string, number>>(new Map());
 
     const unlockPlayback = React.useCallback(async () => {
@@ -165,14 +168,6 @@ function InterviewPageContent() {
         socket.send(JSON.stringify(message));
     }, []);
 
-    const sendAudioBytes = React.useCallback((bytes: Uint8Array) => {
-        const socket = socketRef.current;
-        if (!socket || socket.readyState !== WebSocket.OPEN) {
-            return;
-        }
-        socket.send(bytes.buffer);
-    }, []);
-
     const updateParticipant = React.useCallback((socketId: string, updater: (current?: RemoteParticipant) => RemoteParticipant) => {
         setParticipants((current) => {
             const index = current.findIndex((participant) => participant.socketId === socketId);
@@ -194,16 +189,14 @@ function InterviewPageContent() {
             window.clearTimeout(timeoutId);
             remoteLevelResetTimeoutsRef.current.delete(socketId);
         }
-
-        remotePlaybackRef.current.delete(socketId);
     }, []);
 
-    const markRemoteLevel = React.useCallback((socketId: string, level: number) => {
+    const markRemoteActivity = React.useCallback((socketId: string) => {
         updateParticipant(socketId, (current) => ({
             socketId,
             displayName: current?.displayName || normalizeUserLabel("", socketId),
             connected: true,
-            level,
+            level: 0.6,
         }));
 
         const previousTimeout = remoteLevelResetTimeoutsRef.current.get(socketId);
@@ -219,106 +212,10 @@ function InterviewPageContent() {
                 level: 0,
             }));
             remoteLevelResetTimeoutsRef.current.delete(socketId);
-        }, 300);
+        }, 350);
 
         remoteLevelResetTimeoutsRef.current.set(socketId, timeoutId);
     }, [updateParticipant]);
-
-    const ensurePlaybackContext = React.useCallback((): AudioContext => {
-        if (!playbackContextRef.current) {
-            playbackContextRef.current = new AudioContext({ sampleRate: AUDIO_SAMPLE_RATE });
-        }
-
-        const playbackContext = playbackContextRef.current;
-        if (playbackContext.state === "suspended") {
-            void playbackContext.resume();
-        }
-
-        return playbackContext;
-    }, []);
-
-    const scheduleRemotePlayback = React.useCallback((socketId: string) => {
-        const playbackContext = ensurePlaybackContext();
-        const state = remotePlaybackRef.current.get(socketId);
-
-        if (!state || state.isPlaying || state.queue.length === 0) {
-            return;
-        }
-
-        const queueMsBeforeStart = state.queue.length * AUDIO_FRAME_MS;
-        if (queueMsBeforeStart < state.targetBufferMs) {
-            return;
-        }
-
-        state.isPlaying = true;
-
-        const playNext = () => {
-            const latest = remotePlaybackRef.current.get(socketId);
-            if (!latest) {
-                return;
-            }
-
-            const chunk = latest.queue.shift();
-            if (!chunk) {
-                latest.isPlaying = false;
-                latest.nextTime = playbackContext.currentTime;
-                latest.targetBufferMs = Math.min(MAX_JITTER_BUFFER_MS, latest.targetBufferMs + 20);
-                return;
-            }
-
-            const audioBuffer = playbackContext.createBuffer(1, chunk.length, AUDIO_SAMPLE_RATE);
-            const channelData = Float32Array.from(chunk);
-            audioBuffer.getChannelData(0).set(channelData);
-
-            const source = playbackContext.createBufferSource();
-            source.buffer = audioBuffer;
-            source.connect(playbackContext.destination);
-
-            const queueMs = latest.queue.length * AUDIO_FRAME_MS;
-            source.playbackRate.value = 1;
-
-            const startAt = Math.max(playbackContext.currentTime + 0.005, latest.nextTime || 0);
-            source.start(startAt);
-            latest.nextTime = startAt + audioBuffer.duration;
-
-            if (queueMs <= latest.targetBufferMs + 20) {
-                latest.targetBufferMs = Math.max(MIN_JITTER_BUFFER_MS, latest.targetBufferMs - 2);
-            }
-
-            source.onended = () => {
-                playNext();
-            };
-        };
-
-        playNext();
-    }, [ensurePlaybackContext]);
-
-    const processRemoteAudio = React.useCallback((socketId: string, payload: Uint8Array) => {
-        const samples = pcm16ToFloat32(payload);
-        if (!samples.length) {
-            return;
-        }
-
-        const level = calculateRms(samples);
-        markRemoteLevel(socketId, level);
-
-        const existing = remotePlaybackRef.current.get(socketId);
-        if (existing) {
-            existing.queue.push(samples);
-            if (existing.queue.length > 30) {
-                existing.queue.shift();
-            }
-        } else {
-            remotePlaybackRef.current.set(socketId, {
-                queue: [samples],
-                isPlaying: false,
-                nextTime: 0,
-                targetBufferMs: MIN_JITTER_BUFFER_MS,
-            });
-        }
-
-        scheduleRemotePlayback(socketId);
-    }, [markRemoteLevel, scheduleRemotePlayback]);
 
     const startAudioLevelMonitor = React.useCallback((stream: MediaStream, onLevel: (level: number) => void): (() => void) => {
         const audioContext = new AudioContext();
@@ -354,75 +251,236 @@ function InterviewPageContent() {
         };
     }, []);
 
-    const stopLocalPublisher = React.useCallback(async () => {
-        pendingCaptureSamplesRef.current = [];
-
-        if (localProcessorNodeRef.current) {
-            localProcessorNodeRef.current.onaudioprocess = null;
-            localProcessorNodeRef.current.disconnect();
-            localProcessorNodeRef.current = null;
+    const cleanupSenderPlayer = React.useCallback((senderId: string) => {
+        const player = senderPlayersRef.current.get(senderId);
+        if (!player) {
+            return;
         }
 
-        if (localSourceNodeRef.current) {
-            localSourceNodeRef.current.disconnect();
-            localSourceNodeRef.current = null;
-        }
-
-        if (localAudioContextRef.current) {
-            try {
-                await localAudioContextRef.current.close();
-            } catch {
-                return;
-            } finally {
-                localAudioContextRef.current = null;
+        try {
+            if (player.mediaSource.readyState === "open") {
+                player.mediaSource.endOfStream();
             }
+        } catch {
+            return;
         }
+
+        player.queue = [];
+        player.sourceBufferReady = false;
+        player.sourceBuffer = null;
+        player.audio.pause();
+        player.audio.src = "";
+
+        if (player.audio.parentNode) {
+            player.audio.parentNode.removeChild(player.audio);
+        }
+
+        senderPlayersRef.current.delete(senderId);
     }, []);
 
-    const startLocalPublisher = React.useCallback(async (stream: MediaStream) => {
-        await stopLocalPublisher();
+    const cleanupAllSenderPlayers = React.useCallback(() => {
+        senderPlayersRef.current.forEach((_, senderId) => {
+            cleanupSenderPlayer(senderId);
+        });
+        senderPlayersRef.current.clear();
+    }, [cleanupSenderPlayer]);
 
-        const audioContext = new AudioContext({ sampleRate: AUDIO_SAMPLE_RATE });
-        if (audioContext.state === "suspended") {
-            await audioContext.resume();
+    const flushSenderQueue = React.useCallback((senderId: string) => {
+        const player = senderPlayersRef.current.get(senderId);
+        if (!player || !player.sourceBuffer || !player.sourceBufferReady || player.sourceBuffer.updating || player.isRemoving) {
+            return;
         }
 
-        const sourceNode = audioContext.createMediaStreamSource(stream);
-        const processorNode = audioContext.createScriptProcessor(PROCESSOR_BUFFER_SIZE, 1, 1);
+        if (!player.queue.length) {
+            return;
+        }
 
-        processorNode.onaudioprocess = (event) => {
-            if (isMutedRef.current) {
+        const chunk = player.queue.shift();
+        if (!chunk) {
+            return;
+        }
+
+        try {
+            player.sourceBuffer.appendBuffer(chunk);
+            player.appendErrorCount = 0;
+            void player.audio.play().catch(() => {
+                return;
+            });
+        } catch {
+            player.appendErrorCount += 1;
+            player.queue.unshift(chunk);
+
+            if (player.appendErrorCount >= 3) {
+                cleanupSenderPlayer(senderId);
                 return;
             }
 
-            const input = event.inputBuffer.getChannelData(0);
-            const pending = pendingCaptureSamplesRef.current;
+            window.setTimeout(() => {
+                flushSenderQueue(senderId);
+            }, 150);
+        }
+    }, [cleanupSenderPlayer]);
 
-            for (let i = 0; i < input.length; i += 1) {
-                pending.push(input[i] ?? 0);
+    const createSenderPlayer = React.useCallback((senderId: string, mimeType: string): SenderPlayer | null => {
+        if (senderPlayersRef.current.has(senderId)) {
+            const existing = senderPlayersRef.current.get(senderId) || null;
+            if (existing && existing.mimeType !== mimeType) {
+                cleanupSenderPlayer(senderId);
+            } else {
+                return existing;
+            }
+        }
+
+        const audio = new Audio();
+        audio.autoplay = true;
+        audio.setAttribute("playsinline", "true");
+        audio.style.display = "none";
+        document.body.appendChild(audio);
+
+        const mediaSource = new MediaSource();
+        audio.src = URL.createObjectURL(mediaSource);
+
+        const player: SenderPlayer = {
+            audio,
+            mediaSource,
+            sourceBuffer: null,
+            queue: [],
+            mimeType,
+            sourceBufferReady: false,
+            isRemoving: false,
+            appendErrorCount: 0,
+        };
+
+        mediaSource.addEventListener("sourceopen", () => {
+            if (!MediaSource.isTypeSupported(mimeType)) {
+                cleanupSenderPlayer(senderId);
+                return;
             }
 
-            while (pending.length >= AUDIO_FRAME_SAMPLES) {
-                const frame = new Float32Array(AUDIO_FRAME_SAMPLES);
-
-                for (let i = 0; i < AUDIO_FRAME_SAMPLES; i += 1) {
-                    frame[i] = pending[i] ?? 0;
+            try {
+                const sourceBuffer = mediaSource.addSourceBuffer(mimeType);
+                player.sourceBuffer = sourceBuffer;
+                try {
+                    sourceBuffer.mode = "sequence";
+                } catch {
+                    return;
                 }
 
-                pending.splice(0, AUDIO_FRAME_SAMPLES);
+                const readinessTimer = window.setTimeout(() => {
+                    player.sourceBufferReady = true;
+                    flushSenderQueue(senderId);
+                }, 200);
 
-                const pcmBytes = float32ToPCM16(frame);
-                sendAudioBytes(pcmBytes);
+                sourceBuffer.addEventListener("updateend", () => {
+                    window.clearTimeout(readinessTimer);
+                    if (!player.sourceBufferReady) {
+                        player.sourceBufferReady = true;
+                    }
+                    player.isRemoving = false;
+                    flushSenderQueue(senderId);
+                });
+
+                sourceBuffer.addEventListener("error", () => {
+                    cleanupSenderPlayer(senderId);
+                });
+
+                void audio.play().catch(() => {
+                    return;
+                });
+            } catch {
+                cleanupSenderPlayer(senderId);
+            }
+        });
+
+        mediaSource.addEventListener("sourceclose", () => {
+            player.sourceBufferReady = false;
+        });
+
+        senderPlayersRef.current.set(senderId, player);
+        return player;
+    }, [cleanupSenderPlayer, flushSenderQueue]);
+
+    const appendChunkForSender = React.useCallback((senderId: string, mimeType: string, audioChunk: ArrayBuffer) => {
+        const player = createSenderPlayer(senderId, mimeType);
+        if (!player) {
+            return;
+        }
+
+        player.queue.push(audioChunk);
+        if (player.queue.length > MAX_QUEUE_PER_SENDER) {
+            player.queue.shift();
+        }
+
+        flushSenderQueue(senderId);
+    }, [createSenderPlayer, flushSenderQueue]);
+
+    const stopRecorder = React.useCallback(() => {
+        const recorder = mediaRecorderRef.current;
+        if (!recorder) {
+            return;
+        }
+
+        try {
+            if (recorder.state !== "inactive") {
+                recorder.stop();
+            }
+        } catch {
+            return;
+        }
+
+        mediaRecorderRef.current = null;
+    }, []);
+
+    const startRecorder = React.useCallback((stream: MediaStream): boolean => {
+        const selectedMimeType = selectedMimeTypeRef.current;
+
+        try {
+            mediaRecorderRef.current = selectedMimeType
+                ? new MediaRecorder(stream, { mimeType: selectedMimeType })
+                : new MediaRecorder(stream);
+        } catch {
+            return false;
+        }
+
+        const recorder = mediaRecorderRef.current;
+        if (!recorder) {
+            return false;
+        }
+
+        recorder.onerror = () => {
+            setErrorMessage("Error en captura de audio. Intenta reconectar la sala.");
+        };
+
+        recorder.ondataavailable = async (event) => {
+            if (!event.data || event.data.size === 0) {
+                return;
+            }
+
+            const socket = socketRef.current;
+            if (!socket || socket.readyState !== WebSocket.OPEN) {
+                return;
+            }
+
+            if (isMuted) {
+                return;
+            }
+
+            try {
+                const audioArrayBuffer = await event.data.arrayBuffer();
+                const wrapped = wrapChunkWithClientHeader(audioArrayBuffer, selectedMimeType || event.data.type || "");
+                socket.send(wrapped);
+            } catch {
+                return;
             }
         };
 
-        sourceNode.connect(processorNode);
-        processorNode.connect(audioContext.destination);
-
-        localAudioContextRef.current = audioContext;
-        localSourceNodeRef.current = sourceNode;
-        localProcessorNodeRef.current = processorNode;
-    }, [sendAudioBytes, stopLocalPublisher]);
+        try {
+            recorder.start(250);
+            return true;
+        } catch {
+            return false;
+        }
+    }, [isMuted]);
 
     const leaveRoom = React.useCallback(async () => {
         const currentSelfId = selfIdRef.current;
@@ -432,38 +490,30 @@ function InterviewPageContent() {
         setSelfId("");
         setParticipants([]);
         setLocalLevel(0);
+        setIsMuted(false);
 
         selfIdRef.current = "";
-        isMutedRef.current = false;
-        setIsMuted(false);
 
         if (localMonitorCleanupRef.current) {
             localMonitorCleanupRef.current();
             localMonitorCleanupRef.current = null;
         }
 
-        await stopLocalPublisher();
+        stopRecorder();
 
-        localStreamRef.current?.getTracks().forEach((track) => {
-            track.stop();
-        });
-        localStreamRef.current = null;
+        if (localStreamRef.current) {
+            localStreamRef.current.getTracks().forEach((track) => {
+                track.stop();
+            });
+            localStreamRef.current = null;
+        }
 
         remoteLevelResetTimeoutsRef.current.forEach((timeoutId) => {
             window.clearTimeout(timeoutId);
         });
         remoteLevelResetTimeoutsRef.current.clear();
-        remotePlaybackRef.current.clear();
 
-        if (playbackContextRef.current) {
-            try {
-                await playbackContextRef.current.close();
-            } catch {
-                return;
-            } finally {
-                playbackContextRef.current = null;
-            }
-        }
+        cleanupAllSenderPlayers();
 
         const socket = socketRef.current;
         if (socket) {
@@ -477,7 +527,7 @@ function InterviewPageContent() {
             socket.close();
             socketRef.current = null;
         }
-    }, [sendJson, stopLocalPublisher]);
+    }, [cleanupAllSenderPlayers, sendJson, stopRecorder]);
 
     React.useEffect(() => {
         if (router.isReady && typeof router.query.role_id === "string" && !roomId.startsWith("role-")) {
@@ -505,17 +555,24 @@ function InterviewPageContent() {
             return;
         }
 
+        const supportedMimeType = pickSupportedMimeType();
+        if (!supportedMimeType) {
+            setErrorMessage("Este navegador no soporta un formato de audio compatible para la sala.");
+            return;
+        }
+
+        selectedMimeTypeRef.current = supportedMimeType;
+
         setIsConnecting(true);
         setErrorMessage(null);
         setConnectionStatus("connecting");
 
         try {
             await unlockPlayback();
+            await leaveRoom();
 
             const localStream = await navigator.mediaDevices.getUserMedia({
                 audio: {
-                    channelCount: 1,
-                    sampleRate: AUDIO_SAMPLE_RATE,
                     echoCancellation: true,
                     noiseSuppression: true,
                     autoGainControl: true,
@@ -525,7 +582,6 @@ function InterviewPageContent() {
 
             localStreamRef.current = localStream;
             setIsMuted(false);
-            isMutedRef.current = false;
 
             localMonitorCleanupRef.current = startAudioLevelMonitor(localStream, (level) => {
                 setLocalLevel(level);
@@ -554,7 +610,10 @@ function InterviewPageContent() {
                     displayName: safeDisplayName,
                 });
 
-                void startLocalPublisher(localStream);
+                const started = startRecorder(localStream);
+                if (!started) {
+                    setErrorMessage("No se pudo iniciar la captura de audio. Revisa permisos y compatibilidad.");
+                }
             };
 
             socket.onclose = () => {
@@ -574,7 +633,7 @@ function InterviewPageContent() {
                     }
 
                     const userIdLength = buffer[0];
-                    if (userIdLength === 0 || buffer.length < 1 + userIdLength + 2) {
+                    if (userIdLength === 0 || buffer.length <= 1 + userIdLength) {
                         return;
                     }
 
@@ -584,8 +643,25 @@ function InterviewPageContent() {
                         return;
                     }
 
-                    const audioPayload = buffer.slice(1 + userIdLength);
-                    processRemoteAudio(senderId, audioPayload);
+                    const payloadBytes = buffer.slice(1 + userIdLength);
+                    const payloadBuffer = new Uint8Array(payloadBytes.length);
+                    payloadBuffer.set(payloadBytes);
+                    const decoded = unwrapIncomingAudioPayload(payloadBuffer.buffer);
+                    if (!decoded.audioBuffer) {
+                        return;
+                    }
+
+                    const mimeType = decoded.mimeType || selectedMimeTypeRef.current || "audio/webm;codecs=opus";
+
+                    updateParticipant(senderId, (current) => ({
+                        socketId: senderId,
+                        displayName: current?.displayName || normalizeUserLabel("", senderId),
+                        connected: true,
+                        level: current?.level || 0,
+                    }));
+
+                    appendChunkForSender(senderId, mimeType, decoded.audioBuffer);
+                    markRemoteActivity(senderId);
                     return;
                 }
 
@@ -622,6 +698,7 @@ function InterviewPageContent() {
                 }
 
                 if (payload.event === "leave" || payload.event === "user_left") {
+                    cleanupSenderPlayer(senderId);
                     removeParticipant(senderId);
                 }
             };
@@ -633,7 +710,7 @@ function InterviewPageContent() {
         } finally {
             setIsConnecting(false);
         }
-    }, [displayName, leaveRoom, processRemoteAudio, removeParticipant, roomId, sendJson, startAudioLevelMonitor, startLocalPublisher, unlockPlayback, updateParticipant]);
+    }, [appendChunkForSender, cleanupSenderPlayer, leaveRoom, markRemoteActivity, removeParticipant, roomId, sendJson, startAudioLevelMonitor, startRecorder, unlockPlayback, updateParticipant, displayName]);
 
     const toggleMute = () => {
         const localStream = localStreamRef.current;
@@ -641,8 +718,7 @@ function InterviewPageContent() {
             return;
         }
 
-        const nextMuted = !isMutedRef.current;
-        isMutedRef.current = nextMuted;
+        const nextMuted = !isMuted;
 
         localStream.getAudioTracks().forEach((track) => {
             track.enabled = !nextMuted;
@@ -832,10 +908,11 @@ function InterviewPageContent() {
                                                         <p className="text-xs text-slate-500">{participant.socketId}</p>
                                                     </div>
                                                     <span
-                                                        className={`rounded-full px-2 py-1 text-[11px] font-medium ${participant.connected
+                                                        className={`rounded-full px-2 py-1 text-[11px] font-medium ${
+                                                            participant.connected
                                                                 ? "bg-emerald-100 text-emerald-700"
                                                                 : "bg-slate-100 text-slate-500"
-                                                            }`}
+                                                        }`}
                                                     >
                                                         {participant.connected ? "Activo" : "Conectando"}
                                                     </span>
@@ -843,8 +920,9 @@ function InterviewPageContent() {
 
                                                 <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-slate-100">
                                                     <div
-                                                        className={`h-full rounded-full transition-all ${isSpeaking ? "bg-emerald-500" : "bg-cyan-500"
-                                                            }`}
+                                                        className={`h-full rounded-full transition-all ${
+                                                            isSpeaking ? "bg-emerald-500" : "bg-cyan-500"
+                                                        }`}
                                                         style={{ width: `${levelWidth}%` }}
                                                     />
                                                 </div>
