@@ -13,7 +13,9 @@ import {
     UserRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { AudioPlayer, type AudioPlayerQuestion } from "@/components/AudioPlayer";
 import PrivateRoute from "@/components/PrivateRoute";
+import { getAccessToken } from "@/utils/session";
 
 const BACKEND_WS_BASE = process.env.NEXT_PUBLIC_BACKEND_WS_BASE;
 const CLIENT_MAGIC_A = 67; // 'C'
@@ -800,6 +802,25 @@ function InterviewPageContent() {
 
     const localName = displayName.trim() || "Tu usuario";
     const activeRemoteCount = participants.length;
+    const accessToken = typeof window !== "undefined" ? getAccessToken() : null;
+    const roleId = router.isReady && typeof router.query.role_id === "string"
+        ? router.query.role_id.trim()
+        : "";
+    const activeQuestion = React.useMemo<AudioPlayerQuestion>(() => {
+        if (roleId) {
+            return {
+                id: `intro-${roleId}`,
+                text: `Presentate y resume por que tu experiencia encaja con el rol ${roleId}.`,
+                note: "Pregunta activa temporal derivada del role_id actual.",
+            };
+        }
+
+        return {
+            id: "intro-general",
+            text: "Presentate y resume brevemente la experiencia mas relevante que aportarias en esta entrevista.",
+            note: "Pregunta activa temporal mientras se define el flujo real de preguntas.",
+        };
+    }, [roleId]);
 
     return (
         <>
@@ -920,6 +941,10 @@ function InterviewPageContent() {
                                 Participantes remotos: {activeRemoteCount}
                             </span>
                         </div>
+                    </section>
+
+                    <section className="mb-6">
+                        <AudioPlayer question={activeQuestion} authToken={accessToken} />
                     </section>
 
                     <section className="grid grid-cols-1 gap-4 xl:grid-cols-3">
