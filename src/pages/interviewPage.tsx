@@ -365,7 +365,7 @@ function InterviewPageContent() {
                 try {
                     sourceBuffer.mode = "sequence";
                 } catch {
-                    return;
+                    // Algunos navegadores no permiten cambiar el mode; continuamos con el default.
                 }
 
                 const readinessTimer = window.setTimeout(() => {
