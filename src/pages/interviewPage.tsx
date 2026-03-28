@@ -140,6 +140,7 @@ function InterviewPageContent() {
     const selectedMimeTypeRef = React.useRef("");
     const selfIdRef = React.useRef("");
     const lastRecorderRestartAtRef = React.useRef(0);
+    const resyncTimersRef = React.useRef<number[]>([]);
     const localMonitorCleanupRef = React.useRef<(() => void) | null>(null);
 
     const senderPlayersRef = React.useRef<Map<string, SenderPlayer>>(new Map());
@@ -432,6 +433,21 @@ function InterviewPageContent() {
         mediaRecorderRef.current = null;
     }, []);
 
+    const requestResync = React.useCallback((reason: string) => {
+        const socket = socketRef.current;
+        const from = selfIdRef.current;
+        if (!socket || socket.readyState !== WebSocket.OPEN || !from) {
+            return;
+        }
+
+        sendJson({
+            event: "request_resync",
+            from,
+            user_id: from,
+            displayName: reason,
+        });
+    }, [sendJson]);
+
     const startRecorder = React.useCallback((stream: MediaStream): boolean => {
         const selectedMimeType = selectedMimeTypeRef.current;
 
@@ -522,6 +538,13 @@ function InterviewPageContent() {
         if (localMonitorCleanupRef.current) {
             localMonitorCleanupRef.current();
             localMonitorCleanupRef.current = null;
+        }
+
+        if (resyncTimersRef.current.length > 0) {
+            resyncTimersRef.current.forEach((timer) => {
+                window.clearTimeout(timer);
+            });
+            resyncTimersRef.current = [];
         }
 
         stopRecorder();
@@ -639,6 +662,13 @@ function InterviewPageContent() {
                 if (!started) {
                     setErrorMessage("No se pudo iniciar la captura de audio. Revisa permisos y compatibilidad.");
                 }
+
+                // El peer nuevo pide resincronización para que todos los existentes
+                // reinicien su MediaRecorder y reenvíen segmentos iniciales decodificables.
+                requestResync("join-initial");
+                const t1 = window.setTimeout(() => requestResync("join-retry-1"), 450);
+                const t2 = window.setTimeout(() => requestResync("join-retry-2"), 1200);
+                resyncTimersRef.current.push(t1, t2);
             };
 
             socket.onclose = () => {
@@ -743,7 +773,7 @@ function InterviewPageContent() {
         } finally {
             setIsConnecting(false);
         }
-    }, [appendChunkForSender, cleanupSenderPlayer, leaveRoom, markRemoteActivity, removeParticipant, restartRecorderForNewPeer, roomId, sendJson, startAudioLevelMonitor, startRecorder, unlockPlayback, updateParticipant, displayName]);
+    }, [appendChunkForSender, cleanupSenderPlayer, leaveRoom, markRemoteActivity, removeParticipant, requestResync, restartRecorderForNewPeer, roomId, sendJson, startAudioLevelMonitor, startRecorder, unlockPlayback, updateParticipant, displayName]);
 
     const toggleMute = () => {
         const localStream = localStreamRef.current;
