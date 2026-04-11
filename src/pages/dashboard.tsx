@@ -235,7 +235,7 @@ export function DashboardContent() {
   };
 
   const handleStartInterview = (roleId: string) => {
-    router.push(`/interview/start?role_id=${encodeURIComponent(roleId)}`);
+    router.push(`/interviewPageRole?role_id=${encodeURIComponent(roleId)}`);
   };
 
   const handleOpenInterviewRoom = () => {
