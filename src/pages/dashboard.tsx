@@ -239,7 +239,7 @@ export function DashboardContent() {
   };
 
   const handleOpenInterviewRoom = () => {
-    router.push("/interviewPage");
+    router.push("/interviewPageEnter");
   };
 
   const handleViewRoleDetail = (roleId: string) => {
@@ -373,7 +373,7 @@ export function DashboardContent() {
                   onClick={handleOpenInterviewRoom}
                 >
                   <AudioLines className="h-4 w-4" />
-                  Comenzar Entrevista
+                  Entrar a Entrevista
                 </Button>
                 <Button
                   variant="secondary"

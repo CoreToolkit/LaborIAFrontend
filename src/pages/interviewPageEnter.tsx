@@ -18,6 +18,7 @@ import PrivateRoute from "@/components/PrivateRoute";
 import { getAccessToken } from "@/utils/session";
 
 const BACKEND_WS_BASE = process.env.NEXT_PUBLIC_BACKEND_WS_BASE;
+const BACKEND_API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL;
 const CLIENT_MAGIC_A = 67; // 'C'
 const CLIENT_MAGIC_B = 65; // 'A'
 const MAX_QUEUE_PER_SENDER = 60;
@@ -34,6 +35,15 @@ type SignalingMessage = {
     from?: string;
     user_id?: string;
     displayName?: string;
+};
+
+type GroupSessionResponse = {
+    id: number;
+    session_code: string;
+};
+
+type AuthMeResponse = {
+    id: number;
 };
 
 type RemoteParticipant = {
@@ -59,19 +69,21 @@ type SenderPlayer = {
     appendErrorCount: number;
 };
 
-const createDefaultRoomId = (): string => {
-    return `room-${Math.random().toString(36).slice(2, 8)}`;
-};
+const resolveBackendHttpOrigin = (): string => {
+    if (BACKEND_API_BASE) {
+        return BACKEND_API_BASE.replace(/\/+$/, "");
+    }
 
-const normalizeUserId = (displayName: string): string => {
-    const base = displayName
-        .trim()
-        .toLowerCase()
-        .replace(/\s+/g, "-")
-        .replace(/[^a-z0-9-_]/g, "")
-        .slice(0, 24) || "user";
+    if (!BACKEND_WS_BASE) {
+        return "";
+    }
 
-    return `${base}-${Math.random().toString(36).slice(2, 7)}`;
+    const wsAsHttp = BACKEND_WS_BASE
+        .replace(/^wss:\/\//i, "https://")
+        .replace(/^ws:\/\//i, "http://")
+        .replace(/\/+$/, "");
+
+    return wsAsHttp.replace(/\/api\/ws$/i, "").replace(/\/ws$/i, "");
 };
 
 const normalizeUserLabel = (name: string, socketId: string): string => {
@@ -124,9 +136,12 @@ const unwrapIncomingAudioPayload = (audioData: ArrayBuffer): UnwrappedIncomingAu
 
 function InterviewPageContent() {
     const router = useRouter();
+    const roleId = router.isReady && typeof router.query.role_id === "string"
+        ? router.query.role_id.trim()
+        : "";
 
     const [displayName, setDisplayName] = React.useState("");
-    const [roomId, setRoomId] = React.useState(createDefaultRoomId());
+    const [roomId, setRoomId] = React.useState("");
     const [selfId, setSelfId] = React.useState("");
     const [participants, setParticipants] = React.useState<RemoteParticipant[]>([]);
     const [isJoined, setIsJoined] = React.useState(false);
@@ -147,6 +162,7 @@ function InterviewPageContent() {
 
     const senderPlayersRef = React.useRef<Map<string, SenderPlayer>>(new Map());
     const remoteLevelResetTimeoutsRef = React.useRef<Map<string, number>>(new Map());
+    const backendHttpOriginRef = React.useRef(resolveBackendHttpOrigin());
 
     const unlockPlayback = React.useCallback(async () => {
         try {
@@ -171,6 +187,92 @@ function InterviewPageContent() {
         }
         socket.send(JSON.stringify(message));
     }, []);
+
+    const getAuthHeaders = React.useCallback((): HeadersInit | null => {
+        const token = getAccessToken();
+        if (!token) {
+            return null;
+        }
+
+        return {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+        };
+    }, []);
+
+    const getCurrentUserId = React.useCallback(async (headers: HeadersInit): Promise<number> => {
+        const backendHttpOrigin = backendHttpOriginRef.current;
+        if (!backendHttpOrigin) {
+            throw new Error("No se encontró la URL del backend para auth/me.");
+        }
+
+        const response = await fetch(`${backendHttpOrigin}/auth/me`, {
+            method: "GET",
+            headers,
+        });
+
+        if (!response.ok) {
+            throw new Error("No se pudo validar el usuario actual. Inicia sesión de nuevo.");
+        }
+
+        const data = (await response.json()) as AuthMeResponse;
+        if (!data?.id || !Number.isFinite(data.id)) {
+            throw new Error("El backend no devolvió un user_id válido.");
+        }
+
+        return data.id;
+    }, []);
+
+    const ensureSessionCode = React.useCallback(
+        async (headers: HeadersInit, desiredCode: string, roleId: string): Promise<string> => {
+            const backendHttpOrigin = backendHttpOriginRef.current;
+            if (!backendHttpOrigin) {
+                throw new Error("No se encontró la URL del backend para sesiones grupales.");
+            }
+
+            const trimmedCode = desiredCode.trim().toUpperCase();
+            if (trimmedCode) {
+                const checkResponse = await fetch(
+                    `${backendHttpOrigin}/api/group-sessions/${encodeURIComponent(trimmedCode)}`,
+                    {
+                        method: "GET",
+                        headers,
+                    },
+                );
+
+                if (!checkResponse.ok) {
+                    throw new Error("El Session Code no existe o no está disponible.");
+                }
+
+                return trimmedCode;
+            }
+
+            if (!roleId) {
+                throw new Error("No hay role_id para crear una sesión grupal nueva.");
+            }
+
+            const createResponse = await fetch(`${backendHttpOrigin}/api/group-sessions`, {
+                method: "POST",
+                headers,
+                body: JSON.stringify({
+                    role_id: roleId,
+                    difficulty: "intermediate",
+                }),
+            });
+
+            if (!createResponse.ok) {
+                throw new Error("No se pudo crear la sesión grupal desde el backend.");
+            }
+
+            const created = (await createResponse.json()) as GroupSessionResponse;
+            if (!created?.session_code) {
+                throw new Error("El backend no devolvió un session_code válido.");
+            }
+
+            return created.session_code;
+        },
+        [],
+    );
 
     const updateParticipant = React.useCallback((socketId: string, updater: (current?: RemoteParticipant) => RemoteParticipant) => {
         setParticipants((current) => {
@@ -580,12 +682,6 @@ function InterviewPageContent() {
     }, [cleanupAllSenderPlayers, sendJson, stopRecorder]);
 
     React.useEffect(() => {
-        if (router.isReady && typeof router.query.role_id === "string" && !roomId.startsWith("role-")) {
-            setRoomId(`role-${router.query.role_id}`);
-        }
-    }, [roomId, router.isReady, router.query.role_id]);
-
-    React.useEffect(() => {
         return () => {
             void leaveRoom();
         };
@@ -594,11 +690,6 @@ function InterviewPageContent() {
     const joinRoom = React.useCallback(async () => {
         const safeRoomId = roomId.trim();
         const safeDisplayName = displayName.trim();
-
-        if (!safeRoomId) {
-            setErrorMessage("Debes ingresar un Room ID.");
-            return;
-        }
 
         if (!safeDisplayName) {
             setErrorMessage("Debes ingresar tu nombre para entrar.");
@@ -621,6 +712,14 @@ function InterviewPageContent() {
             await unlockPlayback();
             await leaveRoom();
 
+            const headers = getAuthHeaders();
+            if (!headers) {
+                throw new Error("No se encontró token de sesión. Vuelve a iniciar sesión.");
+            }
+
+            const resolvedUserId = await getCurrentUserId(headers);
+            const resolvedSessionCode = await ensureSessionCode(headers, safeRoomId, roleId);
+
             const localStream = await navigator.mediaDevices.getUserMedia({
                 audio: {
                     echoCancellation: true,
@@ -637,11 +736,12 @@ function InterviewPageContent() {
                 setLocalLevel(level);
             });
 
-            const sessionUserId = normalizeUserId(safeDisplayName);
+            const sessionUserId = String(resolvedUserId);
             selfIdRef.current = sessionUserId;
             setSelfId(sessionUserId);
+            setRoomId(resolvedSessionCode);
 
-            const encodedRoom = encodeURIComponent(safeRoomId);
+            const encodedRoom = encodeURIComponent(resolvedSessionCode);
             const encodedUser = encodeURIComponent(sessionUserId);
             const wsUrl = `${BACKEND_WS_BASE}/${encodedRoom}/${encodedUser}`;
 
@@ -775,7 +875,7 @@ function InterviewPageContent() {
         } finally {
             setIsConnecting(false);
         }
-    }, [appendChunkForSender, cleanupSenderPlayer, leaveRoom, markRemoteActivity, removeParticipant, requestResync, restartRecorderForNewPeer, roomId, sendJson, startAudioLevelMonitor, startRecorder, unlockPlayback, updateParticipant, displayName]);
+    }, [appendChunkForSender, cleanupSenderPlayer, ensureSessionCode, getAuthHeaders, getCurrentUserId, leaveRoom, markRemoteActivity, removeParticipant, requestResync, restartRecorderForNewPeer, roleId, roomId, sendJson, startAudioLevelMonitor, startRecorder, unlockPlayback, updateParticipant, displayName]);
 
     const toggleMute = () => {
         const localStream = localStreamRef.current;
@@ -803,9 +903,6 @@ function InterviewPageContent() {
     const localName = displayName.trim() || "Tu usuario";
     const activeRemoteCount = participants.length;
     const accessToken = typeof window !== "undefined" ? getAccessToken() : null;
-    const roleId = router.isReady && typeof router.query.role_id === "string"
-        ? router.query.role_id.trim()
-        : "";
     const activeQuestion = React.useMemo<AudioPlayerQuestion>(() => {
         if (roleId) {
             return {
@@ -884,7 +981,7 @@ function InterviewPageContent() {
                             </div>
                             <div className="lg:col-span-5">
                                 <label htmlFor="roomId" className="mb-1.5 block text-sm font-medium text-slate-700">
-                                    Room ID
+                                    Session Code
                                 </label>
                                 <div className="flex gap-2">
                                     <input
@@ -892,6 +989,7 @@ function InterviewPageContent() {
                                         type="text"
                                         value={roomId}
                                         onChange={(event) => setRoomId(event.target.value)}
+                                        placeholder="Ej: ABCD1234 (vacío para crear uno nuevo)"
                                         className="h-10 w-full rounded-md border border-slate-300 px-3 text-sm text-slate-900 outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-200"
                                     />
                                     <Button type="button" variant="outline" onClick={() => void copyRoomId()} className="gap-1.5">
@@ -977,7 +1075,7 @@ function InterviewPageContent() {
 
                             {participants.length === 0 ? (
                                 <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
-                                    No hay participantes remotos aun. Comparte el Room ID y espera a que ingresen.
+                                    No hay participantes remotos aun. Comparte el Session Code y espera a que ingresen.
                                 </div>
                             ) : (
                                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
