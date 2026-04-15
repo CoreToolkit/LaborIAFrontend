@@ -86,6 +86,23 @@ const resolveBackendHttpOrigin = (): string => {
     return wsAsHttp.replace(/\/api\/ws$/i, "").replace(/\/ws$/i, "");
 };
 
+const resolveBackendWsBase = (): string => {
+    if (BACKEND_WS_BASE) {
+        return BACKEND_WS_BASE.replace(/\/+$/, "");
+    }
+
+    if (!BACKEND_API_BASE) {
+        return "";
+    }
+
+    const httpBase = BACKEND_API_BASE.replace(/\/+$/, "");
+    const wsBase = httpBase
+        .replace(/^https:\/\//i, "wss://")
+        .replace(/^http:\/\//i, "ws://");
+
+    return `${wsBase}/api/ws`;
+};
+
 const normalizeUserLabel = (name: string, socketId: string): string => {
     const safeName = name.trim();
     if (safeName) {
@@ -163,6 +180,7 @@ function InterviewPageContent() {
     const senderPlayersRef = React.useRef<Map<string, SenderPlayer>>(new Map());
     const remoteLevelResetTimeoutsRef = React.useRef<Map<string, number>>(new Map());
     const backendHttpOriginRef = React.useRef(resolveBackendHttpOrigin());
+    const backendWsBaseRef = React.useRef(resolveBackendWsBase());
 
     const unlockPlayback = React.useCallback(async () => {
         try {
@@ -743,7 +761,12 @@ function InterviewPageContent() {
 
             const encodedRoom = encodeURIComponent(resolvedSessionCode);
             const encodedUser = encodeURIComponent(sessionUserId);
-            const wsUrl = `${BACKEND_WS_BASE}/${encodedRoom}/${encodedUser}`;
+            const backendWsBase = backendWsBaseRef.current;
+            if (!backendWsBase) {
+                throw new Error("No se encontró la URL del backend para WebSocket.");
+            }
+
+            const wsUrl = `${backendWsBase}/${encodedRoom}/${encodedUser}`;
 
             const socket = new WebSocket(wsUrl);
             socket.binaryType = "arraybuffer";

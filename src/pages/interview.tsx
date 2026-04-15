@@ -1,9 +1,16 @@
 import React from "react";
 import Head from "next/head";
+import { useRouter } from "next/router";
 import { DashboardLayout } from "@/components/Layout";
 import PrivateRoute from "@/components/PrivateRoute";
 
 function InterviewContent() {
+  const router = useRouter();
+
+  React.useEffect(() => {
+    router.replace("/interviewPageEnter");
+  }, [router]);
+
   return (
     <>
       <Head>
@@ -16,30 +23,11 @@ function InterviewContent() {
       </Head>
 
       <DashboardLayout>
-        <div className="flex-1">
-          <section className="border-b border-slate-200 bg-gradient-to-r from-blue-50 to-blue-100 px-6 py-8">
-            <div className="max-w-7xl mx-auto">
-              <h1 className="text-3xl font-bold text-slate-900 mb-2">
-                Simulador de Entrevista
-              </h1>
-              <p className="text-slate-600">
-                Practica tus habilidades de entrevista con simulaciones interactivas impulsadas por IA.
-              </p>
-            </div>
-          </section>
-
-          <main className="p-6">
-            <div className="max-w-7xl mx-auto">
-              <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-                <h2 className="text-2xl font-semibold text-slate-900 mb-4">
-                  Simulador de Entrevista
-                </h2>
-                <p className="text-slate-600">
-                  Esta página cuenta con simulaciones de entrevista para ayudarte a prepararte para tus próximas entrevistas.
-                </p>
-              </div>
-            </div>
-          </main>
+        <div className="flex min-h-[60vh] flex-1 items-center justify-center px-6">
+          <div className="text-center">
+            <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-b-2 border-blue-600" />
+            <p className="text-slate-600">Redirigiendo al simulador de entrevista...</p>
+          </div>
         </div>
       </DashboardLayout>
     </>
