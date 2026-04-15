@@ -88,6 +88,10 @@ export function DashboardContent() {
     void initializeRecommendations();
   }, [isProfileLoading, shouldOpenOnboarding, initializeRecommendations]);
 
+  const handleOpenInterviewRoom = () => {
+    router.push("/interviewPageEnter");
+  };
+
   const rolesCount = recommendations.length;
   const topMatch = recommendations
     .slice()
@@ -185,14 +189,14 @@ export function DashboardContent() {
                   icon={Zap}
                   iconBgColor="bg-indigo-50"
                   title="Simulación de Entrevista"
-                  description="Practica con nuestro AI"
+                  description="Practica en sala de entrevista con audio en tiempo real"
                   metric={{
                     label: "Practicas realizadas",
                     value: "2",
                   }}
                   action={{
-                    label: "Practicar",
-                    onClick: () => router.push("/interview"),
+                    label: "Entrar",
+                    onClick: handleOpenInterviewRoom,
                   }}
                 />
 
