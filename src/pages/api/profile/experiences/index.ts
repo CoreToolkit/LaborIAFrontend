@@ -1,0 +1,59 @@
+import type { NextApiRequest, NextApiResponse } from "next";
+
+const getBackendUrl = () => process.env.NEXT_PUBLIC_BACKEND_URL || process.env.BACKEND_URL;
+
+const toJsonPayload = async (backendResponse: Response): Promise<Record<string, unknown>> => {
+  const text = await backendResponse.text();
+
+  if (!text) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(text);
+    if (typeof parsed === "object" && parsed !== null) {
+      return parsed as Record<string, unknown>;
+    }
+
+    return { message: String(parsed) };
+  } catch {
+    return { message: text };
+  }
+};
+
+const serializeBody = (body: unknown): string => {
+  if (typeof body === "string") {
+    return body;
+  }
+
+  return JSON.stringify(body ?? {});
+};
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== "GET" && req.method !== "POST") {
+    res.setHeader("Allow", "GET, POST");
+    return res.status(405).json({ message: "Method Not Allowed" });
+  }
+
+  const backendUrl = getBackendUrl();
+  if (!backendUrl) {
+    return res.status(500).json({ message: "Backend URL not configured in environment." });
+  }
+
+  try {
+    const backendResponse = await fetch(`${backendUrl}/profiles/me/experiences`, {
+      method: req.method,
+      headers: {
+        ...(req.headers.authorization ? { Authorization: req.headers.authorization } : {}),
+        ...(req.method === "POST" ? { "Content-Type": "application/json" } : {}),
+      },
+      body: req.method === "POST" ? serializeBody(req.body) : undefined,
+    });
+
+    const payload = await toJsonPayload(backendResponse);
+    return res.status(backendResponse.status).json(payload);
+  } catch (error) {
+    console.error("Proxy experiences error:", error);
+    return res.status(502).json({ message: "Failed to reach backend experiences endpoint." });
+  }
+}

@@ -1,32 +1,38 @@
 import React, { useState } from 'react';
-import { useRouter } from 'next/router';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Clock, Mail, Lock } from 'lucide-react';
+import { Clock } from 'lucide-react';
 import { Provider, setProvider, clearProvider } from '@/utils/session';
 
 export const LoginForm = () => {
-  const router = useRouter();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const backendUrlFromEnv = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const apiUrlFromEnv = process.env.NEXT_PUBLIC_API_URL;
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    // Por ahora solo redirige al dashboard
-    router.push('/dashboard');
-  };
+  const resolvedBackendUrl = (() => {
+    if (backendUrlFromEnv) return backendUrlFromEnv.replace(/\/+$/, '');
+
+    if (!apiUrlFromEnv) return null;
+
+    try {
+      return new URL(apiUrlFromEnv).origin;
+    } catch {
+      return null;
+    }
+  })();
 
   const startOAuth = async (provider: Provider) => {
+    setAuthError(null);
+    setIsSubmitting(true);
+
     try {
-      if (!backendUrl) {
+      if (!resolvedBackendUrl) {
         throw new Error(
-          'backendUrl no está definida. Asegúrate de tener NEXT_PUBLIC_BACKEND_URL en tu entorno.'
+          'No se pudo resolver la URL del backend. Configura NEXT_PUBLIC_BACKEND_URL (o NEXT_PUBLIC_API_URL) en tu entorno.'
         );
       }
 
-      const authUrl = `${backendUrl}/auth/${provider}`;
+      const authUrl = `${resolvedBackendUrl}/auth/${provider}`;
       setProvider(provider);
 
       const res = await fetch(authUrl);
@@ -44,8 +50,9 @@ export const LoginForm = () => {
       window.location.href = data.url;
     } catch (error) {
       console.error('Error al conectar con el servidor:', error);
-      alert('Error: ' + (error as Error).message);
+      setAuthError((error as Error).message || 'No se pudo iniciar sesión con OAuth.');
       clearProvider();
+      setIsSubmitting(false);
     }
   };
 
@@ -66,79 +73,21 @@ export const LoginForm = () => {
       <div className="space-y-2">
         <h1 className="text-3xl font-bold tracking-tight">Bienvenido de nuevo</h1>
         <p className="text-sm text-muted-foreground">
-          Ingresa tus credenciales para acceder a tu cuenta.
+          Inicia sesión con tu cuenta de Google o Microsoft.
         </p>
       </div>
 
       {/* Contenedor con borde para el formulario completo */}
       <div className="p-8 border-2 border-gray-200 rounded-xl bg-white shadow-sm space-y-6">
-        {/* Formulario */}
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Email */}
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <div className="relative">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                id="email"
-                type="email"
-                placeholder="nombre@correo.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="pl-10"
-                required
-              />
-            </div>
+        {authError && (
+          <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {authError}
           </div>
+        )}
 
-          {/* Contraseña */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="password">Contraseña</Label>
-              <a
-                href="#"
-                className="text-sm text-blue-600 hover:underline"
-                onClick={(e) => {
-                  e.preventDefault();
-                  // Implementación futura
-                }}
-              >
-                ¿Olvidaste tu contraseña?
-              </a>
-            </div>
-            <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                id="password"
-                type="password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="pl-10"
-                required
-              />
-            </div>
-          </div>
-
-          {/* Botón de inicio de sesión */}
-          <Button
-            type="submit"
-            className="w-full border-1 cursor-pointer hover:bg-blue-600 hover:text-white transition-colors"
-            size="lg"
-          >
-            Iniciar sesión
-          </Button>
-        </form>
-
-        {/* Separador */}
-        <div className="relative">
-          <div className="absolute inset-0 flex items-center">
-            <span className="w-full border-t" />
-          </div>
-          <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-background px-2 text-muted-foreground">O continuar con</span>
-          </div>
-        </div>
+        <p className="text-sm text-muted-foreground">
+          LaborIA utiliza autenticación por OAuth. Selecciona un proveedor para continuar.
+        </p>
 
         {/* Botones de redes sociales */}
         <div className="grid grid-cols-2 gap-4">
@@ -146,6 +95,7 @@ export const LoginForm = () => {
             type="button"
             variant="outline"
             onClick={handleGoogleLogin}
+            disabled={isSubmitting}
             className="w-full cursor-pointer hover:bg-blue-600 hover:text-white transition-colors"
           >
             <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
@@ -173,6 +123,7 @@ export const LoginForm = () => {
             type="button"
             variant="outline"
             onClick={handleMicrosoftLogin}
+            disabled={isSubmitting}
             className="w-full cursor-pointer hover:bg-blue-600 hover:text-white transition-colors"
           >
             <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
@@ -184,21 +135,6 @@ export const LoginForm = () => {
             Microsoft
           </Button>
         </div>
-      </div>
-
-      {/* Link para crear cuenta */}
-      <div className="text-center text-sm">
-        <span className="text-muted-foreground">¿No tienes una cuenta? </span>
-        <a
-          href="#"
-          className="text-blue-600 hover:underline font-medium"
-          onClick={(e) => {
-            e.preventDefault();
-            // Implementación futura
-          }}
-        >
-          Crear cuenta
-        </a>
       </div>
     </div>
   );
