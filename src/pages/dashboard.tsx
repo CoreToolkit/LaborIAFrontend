@@ -25,6 +25,47 @@ import {
 import { getAccessToken } from "@/utils/session";
 import PrivateRoute from "@/components/PrivateRoute";
 
+const clampPercentage = (value: number): number => {
+  return Math.max(0, Math.min(100, Math.round(value)));
+};
+
+const countFilledFields = (values: Array<string | undefined | null>): number => {
+  return values.filter((value) => typeof value === "string" && value.trim().length > 0).length;
+};
+
+const calculateProfileReadiness = (profile: ReturnType<typeof useProfile>["profile"]): number => {
+  if (!profile) return 0;
+
+  const coreFields = countFilledFields([
+    profile.nombre,
+    profile.email,
+    profile.carrera,
+    profile.universidad,
+    profile.telefono,
+    profile.ubicacion,
+    profile.bio,
+    profile.fechaGraduacion,
+    profile.nivelIngles,
+  ]);
+
+  const coreScore = (coreFields / 9) * 100;
+  const experienceScore = profile.experiencias.length === 0 ? 0 : Math.min(100, 55 + (profile.experiencias.length - 1) * 15);
+  const skillsScore = profile.habilidades.length === 0 ? 0 : Math.min(100, 45 + (profile.habilidades.length - 1) * 10);
+  const preferencesScore = profile.preferencias ? 100 : 0;
+
+  return clampPercentage(
+    coreScore * 0.4 + experienceScore * 0.3 + skillsScore * 0.2 + preferencesScore * 0.1
+  );
+};
+
+const calculateMatchAverage = (recommendations: RoleRecommendation[]): number => {
+  if (recommendations.length === 0) return 0;
+
+  return clampPercentage(
+    recommendations.reduce((acc, item) => acc + item.total_score, 0) / recommendations.length
+  );
+};
+
 export function DashboardContent() {
   const router = useRouter();
   const { profile, isLoading: isProfileLoading } = useProfile();
@@ -96,13 +137,11 @@ export function DashboardContent() {
   const topMatch = recommendations
     .slice()
     .sort((a, b) => b.total_score - a.total_score)[0];
-  const averageMatch =
-    recommendations.length > 0
-      ? Math.round(
-          recommendations.reduce((acc, item) => acc + item.total_score, 0) /
-            recommendations.length
-        )
-      : 0;
+  const averageMatch = calculateMatchAverage(recommendations);
+  const profileReadiness = calculateProfileReadiness(profile);
+  const employabilityScore = clampPercentage(averageMatch * 0.6 + profileReadiness * 0.4);
+  const technicalSkillsScore = clampPercentage(averageMatch * 0.7 + profileReadiness * 0.3);
+  const softSkillsScore = clampPercentage(profileReadiness * 0.75 + averageMatch * 0.25);
 
   if (isProfileLoading) {
     return (
@@ -277,7 +316,11 @@ export function DashboardContent() {
                 </section>
 
                 <div>
-                  <EmployabilityScore score={72} technicalSkills={85} softSkills={60} />
+                  <EmployabilityScore
+                    score={employabilityScore}
+                    technicalSkills={technicalSkillsScore}
+                    softSkills={softSkillsScore}
+                  />
                 </div>
               </div>
             </div>

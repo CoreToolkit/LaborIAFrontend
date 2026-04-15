@@ -189,7 +189,14 @@ function MatchingContent() {
   };
 
   const handleStartInterview = (roleId: string) => {
-    router.push(`/interviewPageRole?role_id=${encodeURIComponent(roleId)}`);
+    const roleName = recommendations.find((item) => item.role_id === roleId)?.role_name;
+    const query = new URLSearchParams({ role_id: roleId });
+
+    if (roleName) {
+      query.set("role_name", roleName);
+    }
+
+    router.push(`/interviewPageRole?${query.toString()}`);
   };
 
   const handleViewRoleDetail = (roleId: string) => {

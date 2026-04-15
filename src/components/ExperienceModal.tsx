@@ -13,6 +13,16 @@ interface ExperienceModalProps {
   mode: 'add' | 'edit';
 }
 
+const emptyExperience: Experience = {
+  cargo: '',
+  empresa: '',
+  fechaInicio: '',
+  fechaFin: null,
+  esActual: false,
+  descripcion: '',
+  ubicacion: '',
+};
+
 export function ExperienceModal({
   isOpen,
   onClose,
@@ -21,18 +31,20 @@ export function ExperienceModal({
   mode,
 }: ExperienceModalProps) {
   const [formData, setFormData] = useState<Experience>(
-    initialData || {
-      cargo: '',
-      empresa: '',
-      fechaInicio: '',
-      fechaFin: null,
-      esActual: false,
-      descripcion: '',
-      ubicacion: '',
-    }
+    initialData || emptyExperience
   );
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    setError(null);
+    setIsLoading(false);
+    setFormData(mode === 'add' ? emptyExperience : (initialData || emptyExperience));
+  }, [initialData, isOpen, mode]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

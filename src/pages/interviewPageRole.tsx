@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { AudioPlayer, type AudioPlayerQuestion } from "@/components/AudioPlayer";
 import PrivateRoute from "@/components/PrivateRoute";
 import { getAccessToken } from "@/utils/session";
+import { getRoleDetail } from "@/services/matchingService";
 
 const BACKEND_WS_BASE = process.env.NEXT_PUBLIC_BACKEND_WS_BASE;
 const BACKEND_API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL;
@@ -156,6 +157,9 @@ function InterviewPageContent() {
     const roleId = router.isReady && typeof router.query.role_id === "string"
         ? router.query.role_id.trim()
         : "";
+    const roleNameFromQuery = router.isReady && typeof router.query.role_name === "string"
+        ? router.query.role_name.trim()
+        : "";
 
     const [displayName, setDisplayName] = React.useState("");
     const [roomId, setRoomId] = React.useState("");
@@ -165,6 +169,7 @@ function InterviewPageContent() {
     const [isConnecting, setIsConnecting] = React.useState(false);
     const [isMuted, setIsMuted] = React.useState(false);
     const [localLevel, setLocalLevel] = React.useState(0);
+    const [roleDisplayName, setRoleDisplayName] = React.useState<string | null>(roleNameFromQuery || null);
     const [connectionStatus, setConnectionStatus] = React.useState<"disconnected" | "connecting" | "connected">("disconnected");
     const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
 
@@ -926,12 +931,48 @@ function InterviewPageContent() {
     const localName = displayName.trim() || "Tu usuario";
     const activeRemoteCount = participants.length;
     const accessToken = typeof window !== "undefined" ? getAccessToken() : null;
+
+    React.useEffect(() => {
+        let cancelled = false;
+
+        const loadRoleDisplayName = async () => {
+            if (roleNameFromQuery) {
+                setRoleDisplayName(roleNameFromQuery);
+                return;
+            }
+
+            if (!roleId || !accessToken) {
+                setRoleDisplayName(null);
+                return;
+            }
+
+            try {
+                const roleDetail = await getRoleDetail(roleId, accessToken);
+                if (!cancelled) {
+                    setRoleDisplayName(roleDetail.role_name || null);
+                }
+            } catch {
+                if (!cancelled) {
+                    setRoleDisplayName(null);
+                }
+            }
+        };
+
+        void loadRoleDisplayName();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [accessToken, roleId, roleNameFromQuery]);
+
     const activeQuestion = React.useMemo<AudioPlayerQuestion>(() => {
+        const readableRoleName = roleDisplayName?.trim() || roleNameFromQuery || roleId || "el rol seleccionado";
+
         if (roleId) {
             return {
                 id: `intro-${roleId}`,
-                text: `Presentate y resume por que tu experiencia encaja con el rol ${roleId}.`,
-                note: "Pregunta activa temporal derivada del role_id actual.",
+                text: `Presentate y resume por que tu experiencia encaja con el rol ${readableRoleName}.`,
+                note: "Pregunta activa derivada del rol seleccionado.",
             };
         }
 
@@ -940,7 +981,7 @@ function InterviewPageContent() {
             text: "Presentate y resume brevemente la experiencia mas relevante que aportarias en esta entrevista.",
             note: "Pregunta activa temporal mientras se define el flujo real de preguntas.",
         };
-    }, [roleId]);
+    }, [roleDisplayName, roleId, roleNameFromQuery]);
 
     return (
         <>
