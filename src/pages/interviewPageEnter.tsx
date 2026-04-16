@@ -29,6 +29,7 @@ const BACKEND_API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL;
 const CLIENT_MAGIC_A = 67; // 'C'
 const CLIENT_MAGIC_B = 65; // 'A'
 const MAX_QUEUE_PER_SENDER = 60;
+const GROUP_INTERVIEW_REJOIN_KEY = "laboria.groupInterview.rejoin";
 
 const MIME_CANDIDATES = [
     "audio/webm;codecs=opus",
@@ -87,6 +88,79 @@ type SenderPlayer = {
     sourceBufferReady: boolean;
     isRemoving: boolean;
     appendErrorCount: number;
+};
+
+type PersistedRejoinState = {
+    roomId: string;
+    displayName: string;
+    userId: string;
+    roleId: string;
+};
+
+const readPersistedRejoinState = (): PersistedRejoinState | null => {
+    if (typeof window === "undefined") {
+        return null;
+    }
+
+    try {
+        const raw = window.localStorage.getItem(GROUP_INTERVIEW_REJOIN_KEY);
+        if (!raw) {
+            return null;
+        }
+
+        const parsed = JSON.parse(raw) as Partial<PersistedRejoinState>;
+        if (
+            typeof parsed.roomId !== "string"
+            || typeof parsed.displayName !== "string"
+            || typeof parsed.userId !== "string"
+        ) {
+            return null;
+        }
+
+        return {
+            roomId: parsed.roomId,
+            displayName: parsed.displayName,
+            userId: parsed.userId,
+            roleId: typeof parsed.roleId === "string" ? parsed.roleId : "",
+        };
+    } catch {
+        return null;
+    }
+};
+
+const persistRejoinState = (state: PersistedRejoinState): void => {
+    if (typeof window === "undefined") {
+        return;
+    }
+
+    try {
+        window.localStorage.setItem(GROUP_INTERVIEW_REJOIN_KEY, JSON.stringify(state));
+    } catch {
+        return;
+    }
+};
+
+const clearPersistedRejoinState = (): void => {
+    if (typeof window === "undefined") {
+        return;
+    }
+
+    try {
+        window.localStorage.removeItem(GROUP_INTERVIEW_REJOIN_KEY);
+    } catch {
+        return;
+    }
+};
+
+type LeaveRoomOptions = {
+    notifyServer?: boolean;
+    clearPersistedRejoin?: boolean;
+};
+
+type JoinRoomOptions = {
+    roomIdOverride?: string;
+    displayNameOverride?: string;
+    allowRejoinDuringInProgress?: boolean;
 };
 
 const resolveBackendHttpOrigin = (): string => {
@@ -188,6 +262,7 @@ function InterviewPageContent() {
     const [isConnecting, setIsConnecting] = React.useState(false);
     const [isMuted, setIsMuted] = React.useState(false);
     const [localLevel, setLocalLevel] = React.useState(0);
+    const [isSyncingState, setIsSyncingState] = React.useState(false);
     const [roleDisplayName, setRoleDisplayName] = React.useState<string | null>(roleNameFromQuery || null);
     const [connectionStatus, setConnectionStatus] = React.useState<"disconnected" | "connecting" | "connected">("disconnected");
     const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
@@ -213,6 +288,7 @@ function InterviewPageContent() {
     const backendHttpOriginRef = React.useRef(resolveBackendHttpOrigin());
     const backendWsBaseRef = React.useRef(resolveBackendWsBase());
     const processedRoundEventKeysRef = React.useRef<string[]>([]);
+    const autoRejoinAttemptedRef = React.useRef(false);
 
     const shouldProcessRoundEvent = React.useCallback((eventType: string, roundId?: string | null, roundIndex?: number | null) => {
         const dedupKey = buildRoundEventDedupKey(eventType, roundId, roundIndex);
@@ -796,7 +872,9 @@ function InterviewPageContent() {
         }
     }, [startRecorder, stopRecorder]);
 
-    const leaveRoom = React.useCallback(async () => {
+    const leaveRoom = React.useCallback(async (options?: LeaveRoomOptions) => {
+        const notifyServer = options?.notifyServer ?? true;
+        const clearPersistedRejoin = options?.clearPersistedRejoin ?? false;
         const currentSelfId = selfIdRef.current;
 
         setConnectionStatus("disconnected");
@@ -804,6 +882,7 @@ function InterviewPageContent() {
         setSelfId("");
         setParticipants([]);
         setLocalLevel(0);
+        setIsSyncingState(false);
         setIsMuted(false);
         setSessionStatus("idle");
         setActiveRoundId(null);
@@ -846,7 +925,7 @@ function InterviewPageContent() {
 
         const socket = socketRef.current;
         if (socket) {
-            if (socket.readyState === WebSocket.OPEN && currentSelfId) {
+            if (notifyServer && socket.readyState === WebSocket.OPEN && currentSelfId) {
                 sendJson({
                     event: "leave",
                     from: currentSelfId,
@@ -856,17 +935,21 @@ function InterviewPageContent() {
             socket.close();
             socketRef.current = null;
         }
+
+        if (clearPersistedRejoin) {
+            clearPersistedRejoinState();
+        }
     }, [cleanupAllSenderPlayers, sendJson, stopRecorder]);
 
     React.useEffect(() => {
         return () => {
-            void leaveRoom();
+            void leaveRoom({ notifyServer: false });
         };
     }, [leaveRoom]);
 
-    const joinRoom = React.useCallback(async () => {
-        const safeRoomId = roomId.trim();
-        const safeDisplayName = displayName.trim();
+    const joinRoom = React.useCallback(async (options?: JoinRoomOptions) => {
+        const safeRoomId = (options?.roomIdOverride ?? roomId).trim();
+        const safeDisplayName = (options?.displayNameOverride ?? displayName).trim();
 
         if (!safeDisplayName) {
             setErrorMessage("Debes ingresar tu nombre para entrar.");
@@ -887,7 +970,7 @@ function InterviewPageContent() {
 
         try {
             await unlockPlayback();
-            await leaveRoom();
+            await leaveRoom({ notifyServer: false });
 
             const headers = getAuthHeaders();
             if (!headers) {
@@ -897,6 +980,25 @@ function InterviewPageContent() {
             const resolvedUserId = await getCurrentUserId(headers);
             const resolvedSessionCode = await ensureSessionCode(headers, safeRoomId, roleId);
             const sessionDetail = await fetchSessionDetail(headers, resolvedSessionCode);
+
+            const resolvedUserIdAsString = String(resolvedUserId);
+            const persisted = readPersistedRejoinState();
+            const isKnownRejoin =
+                options?.allowRejoinDuringInProgress
+                || (
+                    !!persisted
+                    && persisted.roomId.trim().toUpperCase() === resolvedSessionCode.trim().toUpperCase()
+                    && persisted.userId === resolvedUserIdAsString
+                );
+
+            // Validar estado de la sesión antes de conectar
+            const sessionStatus = sessionDetail.status || "waiting";
+            if (sessionStatus === "in_progress" && !isKnownRejoin) {
+                throw new Error("La entrevista ya ha comenzado. No se pueden agregar nuevos participantes.");
+            }
+            if (sessionStatus === "closed") {
+                throw new Error("La entrevista ha finalizado. No se pueden agregar participantes.");
+            }
 
             const localStream = await navigator.mediaDevices.getUserMedia({
                 audio: {
@@ -914,12 +1016,13 @@ function InterviewPageContent() {
                 setLocalLevel(level);
             });
 
-            const sessionUserId = String(resolvedUserId);
+            const sessionUserId = resolvedUserIdAsString;
             selfIdRef.current = sessionUserId;
             setSelfId(sessionUserId);
             setRoomId(resolvedSessionCode);
+            setDisplayName(safeDisplayName);
             setIsHost(sessionDetail.host_id === resolvedUserId);
-            setSessionStatus(sessionDetail.status || "waiting");
+            setSessionStatus(sessionStatus);
 
             const encodedRoom = encodeURIComponent(resolvedSessionCode);
             const encodedUser = encodeURIComponent(sessionUserId);
@@ -940,6 +1043,7 @@ function InterviewPageContent() {
                     return;
                 }
 
+                setIsSyncingState(true);
                 try {
                     const stateResponse = await fetch(
                         `${backendHttpOrigin}/api/group-sessions/${encodeURIComponent(resolvedSessionCode)}/state`,
@@ -973,6 +1077,8 @@ function InterviewPageContent() {
                     }
                 } catch {
                     return;
+                } finally {
+                    setIsSyncingState(false);
                 }
             };
 
@@ -980,6 +1086,13 @@ function InterviewPageContent() {
                 setConnectionStatus("connected");
                 setIsJoined(true);
                 void syncRoomState();
+
+                persistRejoinState({
+                    roomId: resolvedSessionCode,
+                    displayName: safeDisplayName,
+                    userId: sessionUserId,
+                    roleId,
+                });
 
                 sendJson({
                     event: "join",
@@ -1006,8 +1119,8 @@ function InterviewPageContent() {
             };
 
             socket.onerror = () => {
-                const errorMsg = "Error en conexion WebSocket";
-                setErrorMessage(`Error conectando: ${errorMsg}. Revisa firewall, CORS, y que el backend este disponible.`);
+                 const errorMsg = "Error en conexion WebSocket";
+                 setErrorMessage(`Error conectando: ${errorMsg}. Verifica tu conexión de internet, firewall, CORS, y que el backend esté disponible. Si persiste, intenta recargar la página.`);
             };
 
             socket.onmessage = (event: MessageEvent) => {
@@ -1113,6 +1226,9 @@ function InterviewPageContent() {
                     || payload.event === "question_generated"
                     || payload.event === "question_new"
                 ) {
+                    if (payload.event === "interview_closed") {
+                        clearPersistedRejoinState();
+                    }
                     return;
                 }
 
@@ -1150,11 +1266,52 @@ function InterviewPageContent() {
             const fallback = "No fue posible conectarte a la sala. Revisa permisos de microfono y vuelve a intentar.";
             const msg = error instanceof Error && error.message ? error.message : fallback;
             setErrorMessage(msg);
-            await leaveRoom();
+            await leaveRoom({ notifyServer: false });
         } finally {
             setIsConnecting(false);
         }
     }, [activeRoundId, activeRoundIndex, appendChunkForSender, cleanupSenderPlayer, currentQuestion, ensureSessionCode, fetchSessionDetail, getAuthHeaders, getCurrentUserId, leaveRoom, markRemoteActivity, removeParticipant, requestResync, restartRecorderForNewPeer, roleId, roomId, sendJson, sessionStatus, shouldProcessRoundEvent, startAudioLevelMonitor, startRecorder, totalRounds, unlockPlayback, updateParticipant, displayName]);
+
+    React.useEffect(() => {
+        const persisted = readPersistedRejoinState();
+        if (!persisted) {
+            return;
+        }
+
+        if (!displayName.trim()) {
+            setDisplayName(persisted.displayName);
+        }
+
+        if (!roomId.trim()) {
+            setRoomId(persisted.roomId);
+        }
+    }, [displayName, roomId]);
+
+    React.useEffect(() => {
+        if (!router.isReady || isJoined || isConnecting || autoRejoinAttemptedRef.current) {
+            return;
+        }
+
+        const persisted = readPersistedRejoinState();
+        if (!persisted) {
+            return;
+        }
+
+        if (persisted.roleId && roleId && persisted.roleId !== roleId) {
+            return;
+        }
+
+        if (!displayName.trim() || !roomId.trim()) {
+            return;
+        }
+
+        autoRejoinAttemptedRef.current = true;
+        void joinRoom({
+            roomIdOverride: persisted.roomId,
+            displayNameOverride: persisted.displayName,
+            allowRejoinDuringInProgress: true,
+        });
+    }, [displayName, isConnecting, isJoined, joinRoom, roleId, roomId, router.isReady]);
 
     const toggleMute = () => {
         const localStream = localStreamRef.current;
@@ -1277,7 +1434,8 @@ function InterviewPageContent() {
                             </div>
                             <div className="flex items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-xs font-medium text-white">
                                 <Plug className="h-3.5 w-3.5" />
-                                {connectionStatus === "connected" && "Conectado"}
+                                {connectionStatus === "connected" && isSyncingState && "Re-sincronizando sala..."}
+                                {connectionStatus === "connected" && !isSyncingState && "Conectado"}
                                 {connectionStatus === "connecting" && "Conectando..."}
                                 {connectionStatus === "disconnected" && "Desconectado"}
                             </div>
@@ -1347,7 +1505,7 @@ function InterviewPageContent() {
                                             type="button"
                                             variant="destructive"
                                             className="h-10 w-full gap-2"
-                                            onClick={() => void leaveRoom()}
+                                            onClick={() => void leaveRoom({ clearPersistedRejoin: true })}
                                         >
                                             <LogOut className="h-4 w-4" />
                                             Salir de la sala

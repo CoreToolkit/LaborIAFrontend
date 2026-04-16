@@ -231,17 +231,21 @@ export const extractGroupInterviewUiState = (snapshot: unknown): GroupInterviewU
     questionCandidates.push(questionsArray[0]);
   }
 
-  let normalizedQuestion: GroupInterviewQuestion | null = null;
+  // The backend may return the active question directly inside current_round/active_round.
+  let normalizedQuestion: GroupInterviewQuestion | null =
+    roundContainer ? normalizeQuestionRecord(roundContainer, roundId, roundIndex) : null;
 
-  for (const candidate of questionCandidates) {
-    const questionRecord = asRecord(candidate);
-    if (!questionRecord) {
-      continue;
-    }
+  if (!normalizedQuestion) {
+    for (const candidate of questionCandidates) {
+      const questionRecord = asRecord(candidate);
+      if (!questionRecord) {
+        continue;
+      }
 
-    normalizedQuestion = normalizeQuestionRecord(questionRecord, roundId, roundIndex);
-    if (normalizedQuestion) {
-      break;
+      normalizedQuestion = normalizeQuestionRecord(questionRecord, roundId, roundIndex);
+      if (normalizedQuestion) {
+        break;
+      }
     }
   }
 

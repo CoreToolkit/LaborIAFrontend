@@ -61,6 +61,36 @@ describe("group interview websocket/state helpers", () => {
     });
   });
 
+  it("restaura pregunta activa cuando viene dentro de current_round", () => {
+    const snapshot = {
+      session_code: "LIFM9490",
+      status: "in_progress",
+      total_rounds: 1,
+      current_round: {
+        round_id: "round-1",
+        round_index: 1,
+        question_text: "¿Cuál es la diferencia entre concurrencia y paralelismo?",
+        target_skill: "Python",
+        difficulty: "intermediate",
+        status: "active",
+      },
+    };
+
+    const restored = extractGroupInterviewUiState(snapshot);
+
+    expect(restored.status).toBe("in_progress");
+    expect(restored.roundId).toBe("round-1");
+    expect(restored.roundIndex).toBe(1);
+    expect(restored.totalRounds).toBe(1);
+    expect(restored.question).toEqual({
+      roundId: "round-1",
+      roundIndex: 1,
+      text: "¿Cuál es la diferencia entre concurrencia y paralelismo?",
+      targetSkill: "Python",
+      difficulty: "intermediate",
+    });
+  });
+
   it("acepta compatibilidad retroactiva para question_new", () => {
     const payload = {
       event: "question_new",
