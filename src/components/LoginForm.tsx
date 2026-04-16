@@ -60,7 +60,7 @@ export const LoginForm = () => {
   const handleMicrosoftLogin = () => startOAuth('microsoft');
 
   return (
-    <div className="w-full max-w-md space-y-6 ">
+    <div className="w-full space-y-6 px-4 py-5 sm:px-6 sm:py-6">
       {/* Logo */}
       <div className="flex items-center gap-2">
         <div className="h-10 w-10 bg-blue-600 rounded-lg flex items-center justify-center">

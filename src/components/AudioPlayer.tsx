@@ -2,6 +2,7 @@ import React from "react";
 import { Loader2, RefreshCw, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import BlurText from "@/components/BlurText";
 import { generateInterviewQuestionAudio } from "@/services/interviewService";
 
 export interface AudioPlayerQuestion {
@@ -203,7 +204,14 @@ export function AudioPlayer({ question, authToken }: AudioPlayerProps) {
           <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
             Pregunta activa
           </p>
-          <p className="mt-2 text-base font-semibold text-slate-900">{question.text}</p>
+          <BlurText
+            key={question.id}
+            text={question.text}
+            delay={90}
+            animateBy="words"
+            direction="top"
+            className="mt-2 text-base font-semibold text-slate-900"
+          />
           {question.note && (
             <p className="mt-2 text-sm text-slate-500">{question.note}</p>
           )}
