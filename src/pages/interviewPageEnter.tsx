@@ -106,7 +106,12 @@ const readPersistedRejoinState = (): PersistedRejoinState | null => {
     }
 
     try {
-        const raw = window.localStorage.getItem(GROUP_INTERVIEW_REJOIN_KEY);
+        const raw = window.sessionStorage.getItem(GROUP_INTERVIEW_REJOIN_KEY);
+
+        if (window.localStorage.getItem(GROUP_INTERVIEW_REJOIN_KEY)) {
+            window.localStorage.removeItem(GROUP_INTERVIEW_REJOIN_KEY);
+        }
+
         if (!raw) {
             return null;
         }
@@ -137,7 +142,7 @@ const persistRejoinState = (state: PersistedRejoinState): void => {
     }
 
     try {
-        window.localStorage.setItem(GROUP_INTERVIEW_REJOIN_KEY, JSON.stringify(state));
+        window.sessionStorage.setItem(GROUP_INTERVIEW_REJOIN_KEY, JSON.stringify(state));
     } catch {
         return;
     }
@@ -149,6 +154,7 @@ const clearPersistedRejoinState = (): void => {
     }
 
     try {
+        window.sessionStorage.removeItem(GROUP_INTERVIEW_REJOIN_KEY);
         window.localStorage.removeItem(GROUP_INTERVIEW_REJOIN_KEY);
     } catch {
         return;
@@ -1157,12 +1163,30 @@ function InterviewPageContent() {
             socket.onclose = (closeEvent) => {
                 setConnectionStatus("disconnected");
                 if (!isJoined) {
-                    const reason = closeEvent.reason
-                        ? ` (${closeEvent.reason})`
-                        : closeEvent.code !== 1000 ? ` (código ${closeEvent.code})` : "";
-                    setErrorMessage(
-                        `No se pudo conectar a la sala${reason}. Verifica que el backend esté corriendo en ${backendWsBaseRef.current || "la URL configurada"} y que el Session Code sea válido.`
-                    );
+                    const reason = closeEvent.reason || "";
+
+                    if (reason === "session_already_started") {
+                        clearPersistedRejoinState();
+                        setErrorMessage(
+                            "Esta sesión ya ha finalizado o fue cerrada. Crea una nueva sesión para continuar."
+                        );
+                    } else if (reason === "group_session_not_found") {
+                        clearPersistedRejoinState();
+                        setErrorMessage(
+                            "El Session Code no existe o ya no está disponible. Verifica el código e intenta de nuevo."
+                        );
+                    } else if (reason === "user_not_found") {
+                        setErrorMessage(
+                            "Tu usuario no fue encontrado. Vuelve a iniciar sesión."
+                        );
+                    } else {
+                        const detail = reason
+                            ? ` (${reason})`
+                            : closeEvent.code !== 1000 ? ` (código ${closeEvent.code})` : "";
+                        setErrorMessage(
+                            `No se pudo conectar a la sala${detail}. Verifica que el backend esté corriendo y que el Session Code sea válido.`
+                        );
+                    }
                 }
             };
 
