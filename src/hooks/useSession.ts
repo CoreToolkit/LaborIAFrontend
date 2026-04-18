@@ -7,8 +7,11 @@ type SessionState = {
 };
 
 export function useSession(): SessionState {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return Boolean(getAccessToken());
+  });
+  const [isLoading, setIsLoading] = useState(() => typeof window === "undefined");
 
   useEffect(() => {
     if (typeof window === "undefined") return;

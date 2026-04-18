@@ -9,9 +9,9 @@ interface SkillGapBadgeProps {
 
 const getToneClass = (importanceWeight: number): string => {
   if (importanceWeight >= 8) return "border-red-200 bg-red-50 text-red-700";
-  if (importanceWeight >= 5) return "border-amber-200 bg-amber-50 text-amber-700";
+  if (importanceWeight >= 5) return "border-blue-200 bg-blue-50 text-blue-700";
 
-  return "border-blue-200 bg-blue-50 text-blue-700";
+  return "border-slate-200 bg-slate-50 text-slate-700";
 };
 
 const getLabel = (importanceWeight: number): string => {

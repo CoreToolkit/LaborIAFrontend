@@ -13,6 +13,16 @@ interface ExperienceModalProps {
   mode: 'add' | 'edit';
 }
 
+const emptyExperience: Experience = {
+  cargo: '',
+  empresa: '',
+  fechaInicio: '',
+  fechaFin: null,
+  esActual: false,
+  descripcion: '',
+  ubicacion: '',
+};
+
 export function ExperienceModal({
   isOpen,
   onClose,
@@ -21,18 +31,20 @@ export function ExperienceModal({
   mode,
 }: ExperienceModalProps) {
   const [formData, setFormData] = useState<Experience>(
-    initialData || {
-      cargo: '',
-      empresa: '',
-      fechaInicio: '',
-      fechaFin: null,
-      esActual: false,
-      descripcion: '',
-      ubicacion: '',
-    }
+    initialData || emptyExperience
   );
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    setError(null);
+    setIsLoading(false);
+    setFormData(mode === 'add' ? emptyExperience : (initialData || emptyExperience));
+  }, [initialData, isOpen, mode]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,15 +64,15 @@ export function ExperienceModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-6 border-b border-gray-200 sticky top-0 bg-white">
-          <h2 className="text-xl font-semibold text-gray-900">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-xl">
+        <div className="sticky top-0 flex items-center justify-between border-b border-slate-200 bg-white p-6">
+          <h2 className="text-xl font-semibold text-slate-900">
             {mode === 'add' ? 'Agregar Experiencia' : 'Editar Experiencia'}
           </h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600"
+            className="text-slate-400 transition-colors hover:text-slate-600"
             aria-label="Cerrar modal"
           >
             <X className="w-5 h-5" />
@@ -137,9 +149,9 @@ export function ExperienceModal({
                       fechaFin: e.target.checked ? null : formData.fechaFin,
                     })
                   }
-                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-2 focus:ring-blue-600/20"
                 />
-                <span className="text-sm font-medium text-gray-700">
+                <span className="text-sm font-medium text-slate-700">
                   Actualmente trabajo aquí
                 </span>
               </label>
@@ -165,7 +177,7 @@ export function ExperienceModal({
                 onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })}
                 placeholder="Describe tus responsabilidades y logros..."
                 rows={4}
-                className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all focus:outline-none focus:ring-2 focus:ring-blue-600/20"
               />
             </div>
           </div>

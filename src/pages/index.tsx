@@ -1,14 +1,7 @@
-import { useEffect } from "react";
-import { useRouter } from "next/router";
 import Head from "next/head";
+import type { GetServerSideProps } from "next";
 
 export default function Home() {
-  const router = useRouter();
-
-  useEffect(() => {
-    router.push('/login');
-  }, [router]);
-
   return (
     <>
       <Head>
@@ -17,12 +10,16 @@ export default function Home() {
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <link rel="icon" href="/favicon.ico" />
       </Head>
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-          <p className="mt-4 text-gray-600">Redirigiendo...</p>
-        </div>
-      </div>
+      <div className="min-h-screen bg-slate-50" />
     </>
   );
 }
+
+export const getServerSideProps: GetServerSideProps = async () => {
+  return {
+    redirect: {
+      destination: "/login",
+      permanent: false,
+    },
+  };
+};

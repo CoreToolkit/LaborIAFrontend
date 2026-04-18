@@ -80,27 +80,17 @@ describe("DashboardContent", () => {
     vi.mocked(recalculateRecommendations).mockResolvedValue();
   });
 
-  it("renders top 5 roles sorted by match score descending by default", async () => {
+  it("renders matching summary with computed values", async () => {
     vi.mocked(getRecommendations).mockResolvedValue([
-      makeRole({ role_id: "r1", role_name: "Role 30", total_score: 30 }),
-      makeRole({ role_id: "r2", role_name: "Role 90", total_score: 90 }),
-      makeRole({ role_id: "r3", role_name: "Role 70", total_score: 70 }),
-      makeRole({ role_id: "r4", role_name: "Role 50", total_score: 50 }),
-      makeRole({ role_id: "r5", role_name: "Role 80", total_score: 80 }),
-      makeRole({ role_id: "r6", role_name: "Role 20", total_score: 20 }),
+      makeRole({ role_id: "r1", role_name: "Role 80", total_score: 80 }),
+      makeRole({ role_id: "r2", role_name: "Role 60", total_score: 60 }),
     ]);
 
     render(<DashboardContent />);
 
-    await screen.findByText(/Top roles para ti/i);
-
-    expect(screen.queryByRole("heading", { name: "Role 20" })).not.toBeInTheDocument();
-
-    const roleHeadings = screen
-      .getAllByRole("heading", { level: 3 })
-      .map((heading) => heading.textContent);
-
-    expect(roleHeadings).toEqual(["Role 90", "Role 80", "Role 70", "Role 50", "Role 30"]);
+    expect(await screen.findByText("Role 80")).toBeInTheDocument();
+    expect(screen.getAllByText("2").length).toBeGreaterThan(0);
+    expect(screen.getByText("70%")).toBeInTheDocument();
   });
 
   it("recalculates matching when cached recommendations are empty", async () => {
@@ -112,51 +102,28 @@ describe("DashboardContent", () => {
 
     render(<DashboardContent />);
 
-    expect(await screen.findByRole("heading", { name: "Calculated Role" })).toBeInTheDocument();
+    expect(await screen.findByText("Calculated Role")).toBeInTheDocument();
     expect(recalculateRecommendations).toHaveBeenCalledTimes(1);
     expect(getRecommendations).toHaveBeenCalledTimes(2);
   });
 
-  it("filters roles by selected category", async () => {
+  it("navigates to websocket interview room from quick action", async () => {
     const user = userEvent.setup();
-
-    vi.mocked(getRecommendations).mockResolvedValue([
-      makeRole({ role_id: "b1", role_name: "Backend Jr", category: "tech" }),
-      makeRole({ role_id: "d1", role_name: "Data Jr", category: "data" }),
-    ]);
 
     render(<DashboardContent />);
 
-    await screen.findByRole("heading", { name: "Backend Jr" });
+    await user.click(screen.getByRole("button", { name: /Entrar/i }));
 
-    await user.selectOptions(screen.getByLabelText(/Filtrar por categoria/i), "tech");
-
-    expect(screen.getByRole("heading", { name: "Backend Jr" })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Data Jr" })).not.toBeInTheDocument();
+    expect(pushMock).toHaveBeenCalledWith("/interviewPageEnter");
   });
 
-  it("shows empty state when there are no recommendations", async () => {
+  it("shows fallback summary when there are no recommendations", async () => {
     vi.mocked(getRecommendations).mockResolvedValue([]);
 
     render(<DashboardContent />);
 
-    expect(await screen.findByText(/Aun no hay recomendaciones/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Complete Profile/i })).toBeInTheDocument();
-  });
-
-  it("navigates to interview start when CTA is clicked", async () => {
-    const user = userEvent.setup();
-
-    vi.mocked(getRecommendations).mockResolvedValue([
-      makeRole({ role_id: "cta-role", role_name: "Frontend Jr", category: "design" }),
-    ]);
-
-    render(<DashboardContent />);
-
-    await screen.findByRole("heading", { name: "Frontend Jr" });
-    await user.click(screen.getByRole("button", { name: /Start Interview Preparation/i }));
-
-    expect(pushMock).toHaveBeenCalledWith("/interview/start?role_id=cta-role");
+    expect(await screen.findByText(/Sin datos/i)).toBeInTheDocument();
+    expect(screen.getAllByText("0").length).toBeGreaterThan(0);
   });
 
   it("shows generic fetch error and retry action", async () => {
@@ -164,30 +131,26 @@ describe("DashboardContent", () => {
 
     render(<DashboardContent />);
 
-    expect(await screen.findByText(/No pudimos cargar tus recomendaciones/i)).toBeInTheDocument();
+    expect(await screen.findByText(/No pudimos cargar tu resumen de matching/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Reintentar/i })).toBeInTheDocument();
   });
 
-  it("applies demand sorting from dropdown", async () => {
+  it("retries loading recommendations when retry is clicked", async () => {
     const user = userEvent.setup();
-
-    vi.mocked(getRecommendations).mockResolvedValue([
-      makeRole({ role_id: "a", role_name: "Role A", total_score: 60, skill_gaps: [{ skill_name: "Skill1", importance_weight: 3 }] }),
-      makeRole({ role_id: "b", role_name: "Role B", total_score: 55, skill_gaps: [{ skill_name: "Skill1", importance_weight: 7 }] }),
-      makeRole({ role_id: "c", role_name: "Role C", total_score: 80, skill_gaps: [{ skill_name: "Skill1", importance_weight: 4 }] }),
-    ]);
+    vi.mocked(getRecommendations)
+      .mockRejectedValueOnce(new Error("Not Found"))
+      .mockResolvedValueOnce([
+        makeRole({ role_id: "retry-role", role_name: "Recovered Role", total_score: 77 }),
+      ]);
 
     render(<DashboardContent />);
-
-    await screen.findByRole("heading", { name: "Role C" });
-
-    await user.selectOptions(screen.getByLabelText(/Ordenar recomendaciones/i), "demand-desc");
+    await screen.findByText(/No pudimos cargar tu resumen de matching/i);
+    await user.click(screen.getByRole("button", { name: /Reintentar/i }));
 
     await waitFor(() => {
-      const ordered = screen
-        .getAllByRole("heading", { level: 3 })
-        .map((heading) => heading.textContent);
-      expect(ordered).toEqual(["Role B", "Role C", "Role A"]);
+      expect(getRecommendations).toHaveBeenCalledTimes(2);
     });
+
+    expect(await screen.findByText("Recovered Role")).toBeInTheDocument();
   });
 });
