@@ -26,6 +26,26 @@ export type GroupInterviewEventPayload = {
   status?: string;
 };
 
+export type QuestionAudioReadyPayload = {
+  event: "question_audio_ready";
+  round_id: string;
+  round_index?: number;
+  audio_b64: string;
+  question_text?: string;
+  session_code?: string;
+  emitted_at?: string;
+};
+
+export type TtsErrorPayload = {
+  event: "tts_error";
+  round_id: string;
+  round_index?: number;
+  tts_error?: string;
+  question_text?: string;
+  session_code?: string;
+  emitted_at?: string;
+};
+
 const asRecord = (value: unknown): UnknownRecord | null => {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
