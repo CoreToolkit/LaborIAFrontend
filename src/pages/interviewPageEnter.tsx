@@ -22,7 +22,10 @@ import {
     applyGroupInterviewEvent,
     buildRoundEventDedupKey,
     extractGroupInterviewUiState,
+    type QuestionAudioReadyPayload,
+    type TtsErrorPayload,
 } from "@/utils/groupInterview";
+import { useTTSAudioPlayer } from "@/hooks/useTTSAudioPlayer";
 
 const BACKEND_WS_BASE = process.env.NEXT_PUBLIC_BACKEND_WS_BASE;
 const BACKEND_API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL;
@@ -103,7 +106,12 @@ const readPersistedRejoinState = (): PersistedRejoinState | null => {
     }
 
     try {
-        const raw = window.localStorage.getItem(GROUP_INTERVIEW_REJOIN_KEY);
+        const raw = window.sessionStorage.getItem(GROUP_INTERVIEW_REJOIN_KEY);
+
+        if (window.localStorage.getItem(GROUP_INTERVIEW_REJOIN_KEY)) {
+            window.localStorage.removeItem(GROUP_INTERVIEW_REJOIN_KEY);
+        }
+
         if (!raw) {
             return null;
         }
@@ -134,7 +142,7 @@ const persistRejoinState = (state: PersistedRejoinState): void => {
     }
 
     try {
-        window.localStorage.setItem(GROUP_INTERVIEW_REJOIN_KEY, JSON.stringify(state));
+        window.sessionStorage.setItem(GROUP_INTERVIEW_REJOIN_KEY, JSON.stringify(state));
     } catch {
         return;
     }
@@ -146,6 +154,7 @@ const clearPersistedRejoinState = (): void => {
     }
 
     try {
+        window.sessionStorage.removeItem(GROUP_INTERVIEW_REJOIN_KEY);
         window.localStorage.removeItem(GROUP_INTERVIEW_REJOIN_KEY);
     } catch {
         return;
@@ -289,6 +298,27 @@ function InterviewPageContent() {
     const backendWsBaseRef = React.useRef(resolveBackendWsBase());
     const processedRoundEventKeysRef = React.useRef<string[]>([]);
     const autoRejoinAttemptedRef = React.useRef(false);
+
+    // Refs para estado que el socket.onmessage necesita leer siempre actualizado.
+    const activeRoundIdRef = React.useRef<string | null>(null);
+    const activeRoundIndexRef = React.useRef<number | null>(null);
+    const sessionStatusRef = React.useRef<string>("idle");
+    const totalRoundsRef = React.useRef<number>(0);
+    const currentQuestionRef = React.useRef<AudioPlayerQuestion | null>(null);
+
+    const {
+        ttsStatus,
+        handleQuestionAudioReady,
+        handleTtsError,
+        handleRoundStarted: handleTTSRoundStarted,
+        cleanup: cleanupTTSAudio,
+    } = useTTSAudioPlayer(activeRoundId);
+
+    // Las refs se actualizan directamente en el handler del WebSocket (mismo tick de JS),
+    // no en useEffect. Esto elimina la ventana de carrera entre setActiveRoundId(...)
+    // y la validación del siguiente evento de la misma ráfaga (question_audio_ready
+    // llega inmediatamente después de question_generated y necesita ver el round_id ya actualizado).
+    // Los useEffect de sincronización introducían exactamente esa ventana.
 
     const shouldProcessRoundEvent = React.useCallback((eventType: string, roundId?: string | null, roundIndex?: number | null) => {
         const dedupKey = buildRoundEventDedupKey(eventType, roundId, roundIndex);
@@ -893,6 +923,14 @@ function InterviewPageContent() {
         setRunningAction(null);
         processedRoundEventKeysRef.current = [];
 
+        // Resetear refs de ronda inmediatamente para que no queden valores stale
+        // si el componente se reconecta sin desmontar.
+        activeRoundIdRef.current = null;
+        activeRoundIndexRef.current = null;
+        sessionStatusRef.current = "idle";
+        totalRoundsRef.current = 0;
+        currentQuestionRef.current = null;
+
         selfIdRef.current = "";
 
         if (localMonitorCleanupRef.current) {
@@ -922,6 +960,7 @@ function InterviewPageContent() {
         remoteLevelResetTimeoutsRef.current.clear();
 
         cleanupAllSenderPlayers();
+        cleanupTTSAudio();
 
         const socket = socketRef.current;
         if (socket) {
@@ -939,7 +978,7 @@ function InterviewPageContent() {
         if (clearPersistedRejoin) {
             clearPersistedRejoinState();
         }
-    }, [cleanupAllSenderPlayers, sendJson, stopRecorder]);
+    }, [cleanupAllSenderPlayers, cleanupTTSAudio, sendJson, stopRecorder]);
 
     React.useEffect(() => {
         return () => {
@@ -1060,6 +1099,11 @@ function InterviewPageContent() {
                     const snapshot = await stateResponse.json();
                     const restored = extractGroupInterviewUiState(snapshot);
 
+                    activeRoundIdRef.current = restored.roundId;
+                    activeRoundIndexRef.current = restored.roundIndex;
+                    sessionStatusRef.current = restored.status;
+                    totalRoundsRef.current = restored.totalRounds;
+
                     setSessionStatus(restored.status);
                     setActiveRoundId(restored.roundId);
                     setActiveRoundIndex(restored.roundIndex);
@@ -1069,11 +1113,13 @@ function InterviewPageContent() {
                         const skill = restored.question.targetSkill ?? "General";
                         const difficulty = restored.question.difficulty ?? "N/A";
 
-                        setCurrentQuestion({
+                        const restoredQuestion: AudioPlayerQuestion = {
                             id: restored.question.roundId || `round-${restored.question.roundIndex ?? "active"}`,
                             text: restored.question.text,
                             note: `Skill objetivo: ${skill} | Dificultad: ${difficulty}`,
-                        });
+                        };
+                        currentQuestionRef.current = restoredQuestion;
+                        setCurrentQuestion(restoredQuestion);
                     }
                 } catch {
                     return;
@@ -1114,13 +1160,38 @@ function InterviewPageContent() {
                 resyncTimersRef.current.push(t1, t2);
             };
 
-            socket.onclose = () => {
+            socket.onclose = (closeEvent) => {
                 setConnectionStatus("disconnected");
+                if (!isJoined) {
+                    const reason = closeEvent.reason || "";
+
+                    if (reason === "session_already_started") {
+                        clearPersistedRejoinState();
+                        setErrorMessage(
+                            "Esta sesión ya ha finalizado o fue cerrada. Crea una nueva sesión para continuar."
+                        );
+                    } else if (reason === "group_session_not_found") {
+                        clearPersistedRejoinState();
+                        setErrorMessage(
+                            "El Session Code no existe o ya no está disponible. Verifica el código e intenta de nuevo."
+                        );
+                    } else if (reason === "user_not_found") {
+                        setErrorMessage(
+                            "Tu usuario no fue encontrado. Vuelve a iniciar sesión."
+                        );
+                    } else {
+                        const detail = reason
+                            ? ` (${reason})`
+                            : closeEvent.code !== 1000 ? ` (código ${closeEvent.code})` : "";
+                        setErrorMessage(
+                            `No se pudo conectar a la sala${detail}. Verifica que el backend esté corriendo y que el Session Code sea válido.`
+                        );
+                    }
+                }
             };
 
             socket.onerror = () => {
-                 const errorMsg = "Error en conexion WebSocket";
-                 setErrorMessage(`Error conectando: ${errorMsg}. Verifica tu conexión de internet, firewall, CORS, y que el backend esté disponible. Si persiste, intenta recargar la página.`);
+                console.warn("[ws] Error de conexión WebSocket");
             };
 
             socket.onmessage = (event: MessageEvent) => {
@@ -1178,17 +1249,39 @@ function InterviewPageContent() {
                     return;
                 }
 
+                // Validación fuerte de ronda vieja para question_generated / question_new:
+                // si el evento trae un round_index menor al activo, es un evento tardío y se descarta.
+                if (payload.event === "question_generated" || payload.event === "question_new") {
+                    const eventRoundId = payload.round_id;
+                    const eventRoundIndex = payload.round_index !== undefined
+                        ? Number(payload.round_index)
+                        : null;
+                    const currentIndex = activeRoundIndexRef.current;
+
+                    if (eventRoundId && activeRoundIdRef.current && eventRoundId !== activeRoundIdRef.current) {
+                        return;
+                    }
+                    if (
+                        eventRoundIndex !== null
+                        && !Number.isNaN(eventRoundIndex)
+                        && currentIndex !== null
+                        && eventRoundIndex < currentIndex
+                    ) {
+                        return;
+                    }
+                }
+
                 const nextState = applyGroupInterviewEvent(
                     {
-                        status: sessionStatus,
-                        roundId: activeRoundId,
-                        roundIndex: activeRoundIndex,
-                        totalRounds,
-                        question: currentQuestion
+                        status: sessionStatusRef.current,
+                        roundId: activeRoundIdRef.current,
+                        roundIndex: activeRoundIndexRef.current,
+                        totalRounds: totalRoundsRef.current,
+                        question: currentQuestionRef.current
                             ? {
-                                roundId: activeRoundId,
-                                roundIndex: activeRoundIndex,
-                                text: currentQuestion.text,
+                                roundId: activeRoundIdRef.current,
+                                roundIndex: activeRoundIndexRef.current,
+                                text: currentQuestionRef.current.text,
                                 targetSkill: null,
                                 difficulty: null,
                             }
@@ -1198,24 +1291,41 @@ function InterviewPageContent() {
                     shouldProcessRoundEvent,
                 );
 
-                if (
-                    nextState.status !== sessionStatus
-                    || nextState.roundId !== activeRoundId
-                    || nextState.roundIndex !== activeRoundIndex
-                    || nextState.totalRounds !== totalRounds
-                    || nextState.question
-                ) {
+                const stateChanged =
+                    nextState.status !== sessionStatusRef.current
+                    || nextState.roundId !== activeRoundIdRef.current
+                    || nextState.roundIndex !== activeRoundIndexRef.current
+                    || nextState.totalRounds !== totalRoundsRef.current
+                    || nextState.question;
+
+                if (stateChanged) {
+                    // Actualizar refs INMEDIATAMENTE en el mismo tick de JS.
+                    if (nextState.roundId !== activeRoundIdRef.current) {
+                        activeRoundIdRef.current = nextState.roundId;
+                    }
+                    if (nextState.roundIndex !== activeRoundIndexRef.current) {
+                        activeRoundIndexRef.current = nextState.roundIndex;
+                    }
+                    if (nextState.status !== sessionStatusRef.current) {
+                        sessionStatusRef.current = nextState.status;
+                    }
+                    if (nextState.totalRounds !== totalRoundsRef.current) {
+                        totalRoundsRef.current = nextState.totalRounds;
+                    }
+
                     setSessionStatus(nextState.status);
                     setActiveRoundId(nextState.roundId);
                     setActiveRoundIndex(nextState.roundIndex);
                     setTotalRounds(nextState.totalRounds);
 
                     if (nextState.question) {
-                        setCurrentQuestion({
+                        const nextQuestion: AudioPlayerQuestion = {
                             id: nextState.question.roundId || `round-${nextState.question.roundIndex ?? "active"}`,
                             text: nextState.question.text,
                             note: `Skill objetivo: ${nextState.question.targetSkill ?? "General"} | Dificultad: ${nextState.question.difficulty ?? "N/A"}`,
-                        });
+                        };
+                        currentQuestionRef.current = nextQuestion;
+                        setCurrentQuestion(nextQuestion);
                     }
                 }
 
@@ -1228,6 +1338,31 @@ function InterviewPageContent() {
                 ) {
                     if (payload.event === "interview_closed") {
                         clearPersistedRejoinState();
+                    }
+                    if (payload.event === "round_started") {
+                        if (payload.round_id) {
+                            activeRoundIdRef.current = payload.round_id;
+                        }
+                        handleTTSRoundStarted(payload.round_id ?? null);
+                    }
+                    return;
+                }
+
+                // Eventos de audio TTS automático.
+                // La ref ya fue actualizada síncronamente cuando llegó question_generated
+                // o round_started, por lo que no hay ventana de carrera.
+                if (payload.event === "question_audio_ready") {
+                    const eventRoundId = (payload as QuestionAudioReadyPayload).round_id;
+                    if (eventRoundId && eventRoundId === activeRoundIdRef.current) {
+                        handleQuestionAudioReady(payload as QuestionAudioReadyPayload);
+                    }
+                    return;
+                }
+
+                if (payload.event === "tts_error") {
+                    const eventRoundId = (payload as TtsErrorPayload).round_id;
+                    if (eventRoundId && eventRoundId === activeRoundIdRef.current) {
+                        handleTtsError(payload as TtsErrorPayload);
                     }
                     return;
                 }
@@ -1270,7 +1405,7 @@ function InterviewPageContent() {
         } finally {
             setIsConnecting(false);
         }
-    }, [activeRoundId, activeRoundIndex, appendChunkForSender, cleanupSenderPlayer, currentQuestion, ensureSessionCode, fetchSessionDetail, getAuthHeaders, getCurrentUserId, leaveRoom, markRemoteActivity, removeParticipant, requestResync, restartRecorderForNewPeer, roleId, roomId, sendJson, sessionStatus, shouldProcessRoundEvent, startAudioLevelMonitor, startRecorder, totalRounds, unlockPlayback, updateParticipant, displayName]);
+    }, [appendChunkForSender, cleanupSenderPlayer, ensureSessionCode, fetchSessionDetail, getAuthHeaders, getCurrentUserId, handleQuestionAudioReady, handleTtsError, handleTTSRoundStarted, leaveRoom, markRemoteActivity, removeParticipant, requestResync, restartRecorderForNewPeer, roleId, roomId, sendJson, shouldProcessRoundEvent, startAudioLevelMonitor, startRecorder, unlockPlayback, updateParticipant, displayName]);
 
     React.useEffect(() => {
         const persisted = readPersistedRejoinState();
@@ -1613,7 +1748,7 @@ function InterviewPageContent() {
                         </aside>
 
                         <div className="xl:col-span-8">
-                            <AudioPlayer question={activeQuestion} authToken={accessToken} />
+                            <AudioPlayer question={activeQuestion} authToken={accessToken} ttsStatus={ttsStatus} />
                         </div>
                     </section>
 
