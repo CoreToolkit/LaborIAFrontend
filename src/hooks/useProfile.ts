@@ -80,6 +80,7 @@ type BackendExperienceResponse = {
   end_date?: string | null;
   description?: string | null;
   currently_working: boolean;
+  ubicacion?: string | null;
 };
 
 type BackendExperiencePayload = {
@@ -89,6 +90,7 @@ type BackendExperiencePayload = {
   end_date?: string | null;
   description?: string;
   currently_working: boolean;
+  ubicacion?: string;
 };
 
 type BackendSkillResponse = {
@@ -249,7 +251,7 @@ const mapBackendExperienceToFrontend = (backendExperience: BackendExperienceResp
   fechaFin: backendExperience.end_date ?? null,
   descripcion: normalizeText(backendExperience.description),
   esActual: backendExperience.currently_working,
-  ubicacion: undefined,
+  ubicacion: normalizeText(backendExperience.ubicacion),
 });
 
 const mapFrontendExperienceToBackend = (experience: Experience): BackendExperiencePayload => ({
@@ -259,6 +261,7 @@ const mapFrontendExperienceToBackend = (experience: Experience): BackendExperien
   end_date: experience.esActual ? null : normalizeText(experience.fechaFin) ?? null,
   description: normalizeText(experience.descripcion),
   currently_working: experience.esActual,
+  ubicacion: normalizeText(experience.ubicacion),
 });
 
 const mapBackendSkillToFrontend = (backendSkill: BackendSkillResponse): Skill => ({

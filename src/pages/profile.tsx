@@ -246,9 +246,9 @@ function ProfileContent() {
         <link rel="icon" href="/favicon.ico" />
       </Head>
 
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-slate-50">
         {/* Header */}
-        <header className="bg-white border-b border-gray-200">
+        <header className="bg-white border-b border-slate-200">
           <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex justify-between items-center h-16">
               <div className="flex items-center gap-2">
@@ -277,18 +277,18 @@ function ProfileContent() {
         {/* Main Content */}
         <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="mb-6">
-            <h1 className="text-3xl font-bold text-gray-900">Mi Perfil</h1>
-            <p className="text-gray-600 mt-2">
+            <h1 className="text-3xl font-bold text-slate-900">Mi Perfil</h1>
+            <p className="text-slate-600 mt-2">
               Información de tu cuenta y configuración personal
             </p>
           </div>
 
           {/* Loading State */}
           {isLoading && (
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8">
+            <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-8">
               <div className="flex items-center justify-center">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mr-3"></div>
-                <p className="text-gray-600">Cargando datos del perfil...</p>
+                <p className="text-slate-600">Cargando datos del perfil...</p>
               </div>
             </div>
           )}
@@ -321,7 +321,7 @@ function ProfileContent() {
           {profile && !isLoading && !error && (
             <div className="space-y-6">
               {/* Profile Header Card */}
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+              <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
                 {/* Header Section with Avatar */}
                 <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-8">
                   <div className="flex items-center justify-between">
@@ -363,14 +363,14 @@ function ProfileContent() {
                 </div>
 
                 {/* Tabs Navigation */}
-                <div className="border-b border-gray-200">
+                <div className="border-b border-slate-200">
                   <nav className="flex gap-8 px-6" aria-label="Profile sections">
                     <button
                       onClick={() => setActiveTab('info')}
                       className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                         activeTab === 'info'
                           ? 'border-blue-600 text-blue-600'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                          : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
                       }`}
                     >
                       <User className="w-4 h-4 inline mr-2" />
@@ -381,7 +381,7 @@ function ProfileContent() {
                       className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                         activeTab === 'experience'
                           ? 'border-blue-600 text-blue-600'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                          : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
                       }`}
                     >
                       <Briefcase className="w-4 h-4 inline mr-2" />
@@ -392,7 +392,7 @@ function ProfileContent() {
                       className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                         activeTab === 'skills'
                           ? 'border-blue-600 text-blue-600'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                          : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
                       }`}
                     >
                       <Award className="w-4 h-4 inline mr-2" />
@@ -403,7 +403,7 @@ function ProfileContent() {
                       className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                         activeTab === 'stats'
                           ? 'border-blue-600 text-blue-600'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                          : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
                       }`}
                     >
                       <TrendingUp className="w-4 h-4 inline mr-2" />
@@ -414,7 +414,7 @@ function ProfileContent() {
                       className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                         activeTab === 'preferences'
                           ? 'border-blue-600 text-blue-600'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                          : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
                       }`}
                     >
                       <Target className="w-4 h-4 inline mr-2" />
@@ -429,7 +429,7 @@ function ProfileContent() {
                   {activeTab === 'info' && (
                     <div className="space-y-6">
                       <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-lg font-semibold text-gray-900">Información Personal</h3>
+                        <h3 className="text-lg font-semibold text-slate-900">Información Personal</h3>
                         <button
                           onClick={() => setIsPersonalInfoModalOpen(true)}
                           className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
@@ -440,67 +440,67 @@ function ProfileContent() {
                       </div>
                       <div className="grid grid-cols-2 gap-6">
                         <div className="flex items-start gap-3">
-                          <Mail className="w-5 h-5 text-gray-400 mt-0.5" />
+                          <Mail className="w-5 h-5 text-slate-400 mt-0.5" />
                           <div>
-                            <p className="text-sm text-gray-500 font-medium">Correo electrónico</p>
-                            <p className="text-gray-900">{profile.email}</p>
+                            <p className="text-sm text-slate-500 font-medium">Correo electrónico</p>
+                            <p className="text-slate-900">{profile.email}</p>
                           </div>
                         </div>
                         
                         <div className="flex items-start gap-3">
-                          <User className="w-5 h-5 text-gray-400 mt-0.5" />
+                          <User className="w-5 h-5 text-slate-400 mt-0.5" />
                           <div>
-                            <p className="text-sm text-gray-500 font-medium">Nombre completo</p>
-                            <p className="text-gray-900">{profile.nombre}</p>
+                            <p className="text-sm text-slate-500 font-medium">Nombre completo</p>
+                            <p className="text-slate-900">{profile.nombre}</p>
                           </div>
                         </div>
 
                         {profile.telefono && (
                           <div className="flex items-start gap-3">
-                            <Globe className="w-5 h-5 text-gray-400 mt-0.5" />
+                            <Globe className="w-5 h-5 text-slate-400 mt-0.5" />
                             <div>
-                              <p className="text-sm text-gray-500 font-medium">Teléfono</p>
-                              <p className="text-gray-900">{profile.telefono}</p>
+                              <p className="text-sm text-slate-500 font-medium">Teléfono</p>
+                              <p className="text-slate-900">{profile.telefono}</p>
                             </div>
                           </div>
                         )}
 
                         {profile.ubicacion && (
                           <div className="flex items-start gap-3">
-                            <MapPin className="w-5 h-5 text-gray-400 mt-0.5" />
+                            <MapPin className="w-5 h-5 text-slate-400 mt-0.5" />
                             <div>
-                              <p className="text-sm text-gray-500 font-medium">Ubicación</p>
-                              <p className="text-gray-900">{profile.ubicacion}</p>
+                              <p className="text-sm text-slate-500 font-medium">Ubicación</p>
+                              <p className="text-slate-900">{profile.ubicacion}</p>
                             </div>
                           </div>
                         )}
 
                         {profile.carrera && (
                           <div className="flex items-start gap-3">
-                            <Briefcase className="w-5 h-5 text-gray-400 mt-0.5" />
+                            <Briefcase className="w-5 h-5 text-slate-400 mt-0.5" />
                             <div>
-                              <p className="text-sm text-gray-500 font-medium">Carrera</p>
-                              <p className="text-gray-900">{profile.carrera}</p>
+                              <p className="text-sm text-slate-500 font-medium">Carrera</p>
+                              <p className="text-slate-900">{profile.carrera}</p>
                             </div>
                           </div>
                         )}
 
                         {profile.universidad && (
                           <div className="flex items-start gap-3">
-                            <BookOpen className="w-5 h-5 text-gray-400 mt-0.5" />
+                            <BookOpen className="w-5 h-5 text-slate-400 mt-0.5" />
                             <div>
-                              <p className="text-sm text-gray-500 font-medium">Universidad</p>
-                              <p className="text-gray-900">{profile.universidad}</p>
+                              <p className="text-sm text-slate-500 font-medium">Universidad</p>
+                              <p className="text-slate-900">{profile.universidad}</p>
                             </div>
                           </div>
                         )}
 
                         {profile.fechaGraduacion && (
                           <div className="flex items-start gap-3">
-                            <Calendar className="w-5 h-5 text-gray-400 mt-0.5" />
+                            <Calendar className="w-5 h-5 text-slate-400 mt-0.5" />
                             <div>
-                              <p className="text-sm text-gray-500 font-medium">Fecha de Graduación</p>
-                              <p className="text-gray-900">
+                              <p className="text-sm text-slate-500 font-medium">Fecha de Graduación</p>
+                              <p className="text-slate-900">
                                 {new Date(profile.fechaGraduacion).toLocaleDateString('es-CO', {
                                   year: 'numeric',
                                   month: 'long',
@@ -513,10 +513,10 @@ function ProfileContent() {
 
                         {profile.nivelIngles && (
                           <div className="flex items-start gap-3">
-                            <Globe className="w-5 h-5 text-gray-400 mt-0.5" />
+                            <Globe className="w-5 h-5 text-slate-400 mt-0.5" />
                             <div>
-                              <p className="text-sm text-gray-500 font-medium">Nivel de Inglés</p>
-                              <p className="text-gray-900">{profile.nivelIngles}</p>
+                              <p className="text-sm text-slate-500 font-medium">Nivel de Inglés</p>
+                              <p className="text-slate-900">{profile.nivelIngles}</p>
                             </div>
                           </div>
                         )}
@@ -524,16 +524,16 @@ function ProfileContent() {
 
                       {/* Bio / Description */}
                       {profile.bio && (
-                        <div className="pt-6 border-t border-gray-200">
-                          <h4 className="text-sm font-semibold text-gray-900 mb-2">Descripción</h4>
-                          <p className="text-gray-700">{profile.bio}</p>
+                        <div className="pt-6 border-t border-slate-200">
+                          <h4 className="text-sm font-semibold text-slate-900 mb-2">Descripción</h4>
+                          <p className="text-slate-700">{profile.bio}</p>
                         </div>
                       )}
 
                       {/* Social Links */}
                       {profile.redesSociales && (
-                        <div className="pt-6 border-t border-gray-200">
-                          <h4 className="text-sm font-semibold text-gray-900 mb-4">Redes Sociales</h4>
+                        <div className="pt-6 border-t border-slate-200">
+                          <h4 className="text-sm font-semibold text-slate-900 mb-4">Redes Sociales</h4>
                           <div className="flex gap-4">
                             {profile.redesSociales.linkedin && (
                               <a
@@ -551,7 +551,7 @@ function ProfileContent() {
                                 href={profile.redesSociales.github}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="flex items-center gap-2 text-gray-700 hover:text-gray-900"
+                                className="flex items-center gap-2 text-slate-700 hover:text-slate-900"
                               >
                                 <Github className="w-5 h-5" />
                                 <span className="text-sm">GitHub</span>
@@ -578,7 +578,7 @@ function ProfileContent() {
                   {activeTab === 'experience' && (
                     <div className="space-y-4">
                       <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-lg font-semibold text-gray-900">Experiencia Laboral</h3>
+                        <h3 className="text-lg font-semibold text-slate-900">Experiencia Laboral</h3>
                         <Button size="sm" onClick={handleAddExperience}>
                           <Plus className="w-4 h-4 mr-2" />
                           Agregar Experiencia
@@ -588,16 +588,16 @@ function ProfileContent() {
                       {profile.experiencias && profile.experiencias.length > 0 ? (
                         <div className="space-y-4">
                           {profile.experiencias.map((exp, index) => (
-                            <div key={index} className="border border-gray-200 rounded-lg p-4 hover:border-blue-300 transition-colors">
+                            <div key={index} className="border border-slate-200 rounded-lg p-4 hover:border-blue-300 transition-colors">
                               <div className="flex justify-between items-start">
                                 <div className="flex gap-3">
                                   <div className="p-2 bg-blue-50 rounded-lg">
                                     <Building className="w-5 h-5 text-blue-600" />
                                   </div>
                                   <div>
-                                    <h4 className="font-semibold text-gray-900">{exp.cargo}</h4>
-                                    <p className="text-gray-600">{exp.empresa}</p>
-                                    <div className="flex items-center gap-4 text-sm text-gray-500 mt-2">
+                                    <h4 className="font-semibold text-slate-900">{exp.cargo}</h4>
+                                    <p className="text-slate-600">{exp.empresa}</p>
+                                    <div className="flex items-center gap-4 text-sm text-slate-500 mt-2">
                                       <span className="flex items-center gap-1">
                                         <Calendar className="w-4 h-4" />
                                         {exp.fechaInicio} - {exp.esActual ? 'Presente' : exp.fechaFin}
@@ -610,7 +610,7 @@ function ProfileContent() {
                                       )}
                                     </div>
                                     {exp.descripcion && (
-                                      <p className="text-gray-700 mt-2 text-sm">{exp.descripcion}</p>
+                                      <p className="text-slate-700 mt-2 text-sm">{exp.descripcion}</p>
                                     )}
                                   </div>
                                 </div>
@@ -635,9 +635,9 @@ function ProfileContent() {
                           ))}
                         </div>
                       ) : (
-                        <div className="text-center py-12 bg-gray-50 rounded-lg">
-                          <Briefcase className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                          <p className="text-gray-600 mb-4">No has agregado experiencia laboral aún</p>
+                        <div className="text-center py-12 bg-slate-50 rounded-lg">
+                          <Briefcase className="w-12 h-12 text-slate-400 mx-auto mb-3" />
+                          <p className="text-slate-600 mb-4">No has agregado experiencia laboral aún</p>
                           <Button size="sm" onClick={handleAddExperience}>
                             <Plus className="w-4 h-4 mr-2" />
                             Agregar tu primera experiencia
@@ -651,7 +651,7 @@ function ProfileContent() {
                   {activeTab === 'skills' && (
                     <div className="space-y-4">
                       <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-lg font-semibold text-gray-900">Habilidades</h3>
+                        <h3 className="text-lg font-semibold text-slate-900">Habilidades</h3>
                         <Button size="sm" onClick={handleAddSkill}>
                           <Plus className="w-4 h-4 mr-2" />
                           Agregar Habilidad
@@ -662,7 +662,7 @@ function ProfileContent() {
                         <div className="space-y-6">
                           {/* Technical Skills */}
                           <div>
-                            <h4 className="text-sm font-semibold text-gray-700 mb-3">Habilidades Técnicas</h4>
+                            <h4 className="text-sm font-semibold text-slate-700 mb-3">Habilidades Técnicas</h4>
                             <div className="grid gap-3">
                               {profile.habilidades
                                 .filter(skill => skill.tipo === 'tecnica')
@@ -670,8 +670,8 @@ function ProfileContent() {
                                   <div key={skill.id || `${skill.nombre}-${index}`} className="space-y-2">
                                     <div className="flex justify-between items-center">
                                       <div className="flex items-center gap-2">
-                                        <span className="font-medium text-gray-900">{skill.nombre}</span>
-                                        <span className="text-xs text-gray-500">({skill.nivel})</span>
+                                        <span className="font-medium text-slate-900">{skill.nombre}</span>
+                                        <span className="text-xs text-slate-500">({skill.nivel})</span>
                                       </div>
                                       <div className="flex gap-2">
                                         <button 
@@ -691,7 +691,7 @@ function ProfileContent() {
                                       </div>
                                     </div>
                                     <progress
-                                      className="h-2 w-full overflow-hidden rounded-full appearance-none [&::-webkit-progress-bar]:rounded-full [&::-webkit-progress-bar]:bg-gray-200 [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-blue-600 [&::-moz-progress-bar]:rounded-full [&::-moz-progress-bar]:bg-blue-600"
+                                      className="h-2 w-full overflow-hidden rounded-full appearance-none [&::-webkit-progress-bar]:rounded-full [&::-webkit-progress-bar]:bg-slate-200 [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-blue-600 [&::-moz-progress-bar]:rounded-full [&::-moz-progress-bar]:bg-blue-600"
                                       max={100}
                                       value={getSkillLevelProgress(skill.nivel)}
                                       aria-label={`Nivel de ${skill.nombre}`}
@@ -703,7 +703,7 @@ function ProfileContent() {
 
                           {/* Soft Skills */}
                           <div>
-                            <h4 className="text-sm font-semibold text-gray-700 mb-3">Habilidades Blandas</h4>
+                            <h4 className="text-sm font-semibold text-slate-700 mb-3">Habilidades Blandas</h4>
                             <div className="flex flex-wrap gap-2">
                               {profile.habilidades
                                 .filter(skill => skill.tipo === 'blanda')
@@ -724,9 +724,9 @@ function ProfileContent() {
                           </div>
                         </div>
                       ) : (
-                        <div className="text-center py-12 bg-gray-50 rounded-lg">
-                          <Award className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                          <p className="text-gray-600 mb-4">No has agregado habilidades aún</p>
+                        <div className="text-center py-12 bg-slate-50 rounded-lg">
+                          <Award className="w-12 h-12 text-slate-400 mx-auto mb-3" />
+                          <p className="text-slate-600 mb-4">No has agregado habilidades aún</p>
                           <Button size="sm" onClick={handleAddSkill}>
                             <Plus className="w-4 h-4 mr-2" />
                             Agregar tu primera habilidad
@@ -739,7 +739,7 @@ function ProfileContent() {
                   {/* Statistics Tab */}
                   {activeTab === 'stats' && (
                     <div className="space-y-6">
-                      <h3 className="text-lg font-semibold text-gray-900">Estadísticas de Entrenamiento</h3>
+                      <h3 className="text-lg font-semibold text-slate-900">Estadísticas de Entrenamiento</h3>
                       
                       {profile.estadisticas ? (
                         <div className="space-y-6">
@@ -779,35 +779,35 @@ function ProfileContent() {
                           {/* Achievements */}
                           {profile.logros && profile.logros.length > 0 && (
                             <div>
-                              <h4 className="text-sm font-semibold text-gray-700 mb-3">Logros Desbloqueados</h4>
+                              <h4 className="text-sm font-semibold text-slate-700 mb-3">Logros Desbloqueados</h4>
                               <div className="grid grid-cols-3 gap-4">
                                 {profile.logros.map((logro, index) => (
                                   <div 
                                     key={index} 
                                     className={`p-4 rounded-lg border-2 ${
                                       logro.desbloqueado 
-                                        ? 'bg-yellow-50 border-yellow-400' 
-                                        : 'bg-gray-50 border-gray-200 opacity-60'
+                                        ? 'bg-blue-50 border-blue-300' 
+                                        : 'bg-slate-50 border-slate-200 opacity-60'
                                     }`}
                                   >
                                     <div className="text-center">
                                       <div className="text-3xl mb-2">{logro.icono}</div>
-                                      <h5 className="font-semibold text-gray-900 text-sm">{logro.nombre}</h5>
-                                      <p className="text-xs text-gray-600 mt-1">{logro.descripcion}</p>
+                                      <h5 className="font-semibold text-slate-900 text-sm">{logro.nombre}</h5>
+                                      <p className="text-xs text-slate-600 mt-1">{logro.descripcion}</p>
                                       {logro.desbloqueado && logro.fechaDesbloqueo && (
-                                        <p className="text-xs text-gray-500 mt-2">
+                                        <p className="text-xs text-slate-500 mt-2">
                                           Desbloqueado: {new Date(logro.fechaDesbloqueo).toLocaleDateString()}
                                         </p>
                                       )}
                                       {!logro.desbloqueado && (
                                         <div className="mt-2">
                                           <progress
-                                            className="h-1.5 w-full overflow-hidden rounded-full appearance-none [&::-webkit-progress-bar]:rounded-full [&::-webkit-progress-bar]:bg-gray-200 [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-blue-600 [&::-moz-progress-bar]:rounded-full [&::-moz-progress-bar]:bg-blue-600"
+                                            className="h-1.5 w-full overflow-hidden rounded-full appearance-none [&::-webkit-progress-bar]:rounded-full [&::-webkit-progress-bar]:bg-slate-200 [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-blue-600 [&::-moz-progress-bar]:rounded-full [&::-moz-progress-bar]:bg-blue-600"
                                             max={Math.max(logro.progresoRequerido, 1)}
                                             value={getAchievementProgressValue(logro.progresoActual, logro.progresoRequerido)}
                                             aria-label={`Progreso de ${logro.nombre}`}
                                           />
-                                          <p className="text-xs text-gray-600 mt-1">
+                                          <p className="text-xs text-slate-600 mt-1">
                                             {logro.progresoActual} / {logro.progresoRequerido}
                                           </p>
                                         </div>
@@ -820,10 +820,10 @@ function ProfileContent() {
                           )}
                         </div>
                       ) : (
-                        <div className="text-center py-12 bg-gray-50 rounded-lg">
-                          <TrendingUp className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                          <p className="text-gray-600 mb-4">Aún no tienes estadísticas disponibles</p>
-                          <p className="text-gray-500 text-sm">Comienza a practicar entrevistas para ver tu progreso</p>
+                        <div className="text-center py-12 bg-slate-50 rounded-lg">
+                          <TrendingUp className="w-12 h-12 text-slate-400 mx-auto mb-3" />
+                          <p className="text-slate-600 mb-4">Aún no tienes estadísticas disponibles</p>
+                          <p className="text-slate-500 text-sm">Comienza a practicar entrevistas para ver tu progreso</p>
                         </div>
                       )}
                     </div>
@@ -833,7 +833,7 @@ function ProfileContent() {
                   {activeTab === 'preferences' && (
                     <div className="space-y-6">
                       <div className="flex justify-between items-center">
-                        <h3 className="text-lg font-semibold text-gray-900">Preferencias Laborales</h3>
+                        <h3 className="text-lg font-semibold text-slate-900">Preferencias Laborales</h3>
                         <Button size="sm" onClick={handleEditPreferences}>
                           <Edit2 className="w-4 h-4 mr-2" />
                           Editar Preferencias
@@ -844,52 +844,52 @@ function ProfileContent() {
                         <div className="grid grid-cols-2 gap-6">
                           {profile.preferencias.cargo && (
                             <div>
-                              <p className="text-sm text-gray-500 font-medium mb-2">Cargo Deseado</p>
-                              <p className="text-gray-900">{profile.preferencias.cargo}</p>
+                              <p className="text-sm text-slate-500 font-medium mb-2">Cargo Deseado</p>
+                              <p className="text-slate-900">{profile.preferencias.cargo}</p>
                             </div>
                           )}
 
                           {profile.preferencias.industria && (
                             <div>
-                              <p className="text-sm text-gray-500 font-medium mb-2">Industria</p>
-                              <p className="text-gray-900">{profile.preferencias.industria}</p>
+                              <p className="text-sm text-slate-500 font-medium mb-2">Industria</p>
+                              <p className="text-slate-900">{profile.preferencias.industria}</p>
                             </div>
                           )}
 
                           {profile.preferencias.ubicacion && (
                             <div>
-                              <p className="text-sm text-gray-500 font-medium mb-2">Ubicación Preferida</p>
-                              <p className="text-gray-900">{profile.preferencias.ubicacion}</p>
+                              <p className="text-sm text-slate-500 font-medium mb-2">Ubicación Preferida</p>
+                              <p className="text-slate-900">{profile.preferencias.ubicacion}</p>
                             </div>
                           )}
 
                           {profile.preferencias.salarioEsperado && (
                             <div>
-                              <p className="text-sm text-gray-500 font-medium mb-2">Salario Esperado</p>
-                              <p className="text-gray-900">${profile.preferencias.salarioEsperado.toLocaleString()}</p>
+                              <p className="text-sm text-slate-500 font-medium mb-2">Salario Esperado</p>
+                              <p className="text-slate-900">${profile.preferencias.salarioEsperado.toLocaleString()}</p>
                             </div>
                           )}
 
                           {profile.preferencias.tipoContrato && (
                             <div>
-                              <p className="text-sm text-gray-500 font-medium mb-2">Tipo de Contrato</p>
-                              <p className="text-gray-900">{profile.preferencias.tipoContrato}</p>
+                              <p className="text-sm text-slate-500 font-medium mb-2">Tipo de Contrato</p>
+                              <p className="text-slate-900">{profile.preferencias.tipoContrato}</p>
                             </div>
                           )}
 
                           {typeof profile.preferencias.disponibilidadInmediata === 'boolean' && (
                             <div>
-                              <p className="text-sm text-gray-500 font-medium mb-2">Disponibilidad</p>
-                              <p className="text-gray-900">
+                              <p className="text-sm text-slate-500 font-medium mb-2">Disponibilidad</p>
+                              <p className="text-slate-900">
                                 {profile.preferencias.disponibilidadInmediata ? 'Inmediata' : 'A convenir'}
                               </p>
                             </div>
                           )}
                         </div>
                       ) : (
-                        <div className="text-center py-12 bg-gray-50 rounded-lg">
-                          <Target className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                          <p className="text-gray-600 mb-4">No has configurado tus preferencias laborales</p>
+                        <div className="text-center py-12 bg-slate-50 rounded-lg">
+                          <Target className="w-12 h-12 text-slate-400 mx-auto mb-3" />
+                          <p className="text-slate-600 mb-4">No has configurado tus preferencias laborales</p>
                           <Button size="sm" onClick={handleEditPreferences}>
                             <Settings className="w-4 h-4 mr-2" />
                             Configurar Preferencias
@@ -902,8 +902,8 @@ function ProfileContent() {
               </div>
 
               {/* Actions Card */}
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
+                <h3 className="text-lg font-semibold text-slate-900 mb-4">
                   Acciones
                 </h3>
                 <div className="flex flex-wrap gap-3">
