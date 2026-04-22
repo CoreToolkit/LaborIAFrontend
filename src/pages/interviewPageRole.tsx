@@ -15,14 +15,25 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AudioPlayer, type AudioPlayerQuestion } from "@/components/AudioPlayer";
+import { NoiseBackground } from "@/components/ui/noise-background";
 import PrivateRoute from "@/components/PrivateRoute";
 import { getAccessToken } from "@/utils/session";
+import { getRoleDetail } from "@/services/matchingService";
+import {
+    applyGroupInterviewEvent,
+    buildRoundEventDedupKey,
+    extractGroupInterviewUiState,
+    type QuestionAudioReadyPayload,
+    type TtsErrorPayload,
+} from "@/utils/groupInterview";
+import { useTTSAudioPlayer } from "@/hooks/useTTSAudioPlayer";
 
 const BACKEND_WS_BASE = process.env.NEXT_PUBLIC_BACKEND_WS_BASE;
 const BACKEND_API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL;
 const CLIENT_MAGIC_A = 67; // 'C'
 const CLIENT_MAGIC_B = 65; // 'A'
 const MAX_QUEUE_PER_SENDER = 60;
+const GROUP_INTERVIEW_REJOIN_KEY = "laboria.groupInterview.rejoin";
 
 const MIME_CANDIDATES = [
     "audio/webm;codecs=opus",
@@ -37,30 +48,20 @@ type SignalingMessage = {
     user_id?: string;
     displayName?: string;
     round_id?: string;
-    round_index?: number;
+    round_index?: number | string;
     question_text?: string;
     target_skill?: string;
+    difficulty?: string;
+    status?: string;
     evaluation_id?: string;
-};
-
-type ActiveRound = {
-    roundId: string;
-    roundIndex: number;
-    questionText: string;
-    targetSkill: string | null;
 };
 
 type EvaluationResult = {
     evaluation_id: string;
-    status: string;
-    score: number | null;
-    feedback: string | null;
-    score_breakdown: {
-        correctness: number;
-        completeness: number;
-        clarity: number;
-        examples: number;
-    } | null;
+    status: "pending" | "completed" | "failed";
+    score?: number;
+    feedback?: string;
+    transcription?: string;
 };
 
 type GroupSessionResponse = {
@@ -68,9 +69,16 @@ type GroupSessionResponse = {
     session_code: string;
 };
 
+type GroupSessionDetailResponse = {
+    host_id: number;
+    status: string;
+};
+
 type AuthMeResponse = {
     id: number;
 };
+
+type GroupInterviewAction = "start" | "next" | "close";
 
 type RemoteParticipant = {
     socketId: string;
@@ -95,33 +103,33 @@ type SenderPlayer = {
     appendErrorCount: number;
 };
 
-function writeString(view: DataView, offset: number, value: string) {
-    for (let i = 0; i < value.length; i++) {
-        view.setUint8(offset + i, value.charCodeAt(i));
-    }
+function writeString(view: DataView, offset: number, str: string) {
+    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
 }
 
-function audioBufferToWav(buffer: AudioBuffer): ArrayBuffer {
+function audioBufferToWav(buffer: AudioBuffer): Blob {
     const numChannels = buffer.numberOfChannels;
     const sampleRate = buffer.sampleRate;
-    const dataSize = buffer.length * numChannels * 2;
-    const arrayBuffer = new ArrayBuffer(44 + dataSize);
+    const format = 1;
+    const bitDepth = 16;
+    const blockAlign = (numChannels * bitDepth) / 8;
+    const byteRate = sampleRate * blockAlign;
+    const dataLength = buffer.length * blockAlign;
+    const arrayBuffer = new ArrayBuffer(44 + dataLength);
     const view = new DataView(arrayBuffer);
-
     writeString(view, 0, "RIFF");
-    view.setUint32(4, 36 + dataSize, true);
+    view.setUint32(4, 36 + dataLength, true);
     writeString(view, 8, "WAVE");
     writeString(view, 12, "fmt ");
     view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true);
+    view.setUint16(20, format, true);
     view.setUint16(22, numChannels, true);
     view.setUint32(24, sampleRate, true);
-    view.setUint32(28, sampleRate * numChannels * 2, true);
-    view.setUint16(32, numChannels * 2, true);
-    view.setUint16(34, 16, true);
+    view.setUint32(28, byteRate, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, bitDepth, true);
     writeString(view, 36, "data");
-    view.setUint32(40, dataSize, true);
-
+    view.setUint32(40, dataLength, true);
     let offset = 44;
     for (let i = 0; i < buffer.length; i++) {
         for (let ch = 0; ch < numChannels; ch++) {
@@ -130,16 +138,101 @@ function audioBufferToWav(buffer: AudioBuffer): ArrayBuffer {
             offset += 2;
         }
     }
-    return arrayBuffer;
+    return new Blob([arrayBuffer], { type: "audio/wav" });
 }
 
 async function convertBlobToWav(blob: Blob): Promise<Blob> {
     const arrayBuffer = await blob.arrayBuffer();
-    const audioContext = new AudioContext();
-    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-    await audioContext.close();
-    return new Blob([audioBufferToWav(audioBuffer)], { type: "audio/wav" });
+    const audioCtx = new AudioContext();
+    const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+    await audioCtx.close();
+    return audioBufferToWav(audioBuffer);
 }
+
+type PersistedRejoinState = {
+    roomId: string;
+    displayName: string;
+    userId: string;
+    roleId: string;
+};
+
+const readPersistedRejoinState = (): PersistedRejoinState | null => {
+    if (typeof window === "undefined") {
+        return null;
+    }
+
+    try {
+        // sessionStorage: persiste en recargas de la misma pestaña,
+        // pero se limpia al cerrar la pestaña o navegar a otra URL.
+        // Esto evita que el usuario quede ligado permanentemente a una sala.
+        const raw = window.sessionStorage.getItem(GROUP_INTERVIEW_REJOIN_KEY);
+
+        // Migración: si hay datos en localStorage (versión anterior), limpiarlos.
+        // El usuario ya no debe quedar ligado a una sala entre sesiones del navegador.
+        if (window.localStorage.getItem(GROUP_INTERVIEW_REJOIN_KEY)) {
+            window.localStorage.removeItem(GROUP_INTERVIEW_REJOIN_KEY);
+        }
+
+        if (!raw) {
+            return null;
+        }
+
+        const parsed = JSON.parse(raw) as Partial<PersistedRejoinState>;
+        if (
+            typeof parsed.roomId !== "string"
+            || typeof parsed.displayName !== "string"
+            || typeof parsed.userId !== "string"
+        ) {
+            return null;
+        }
+
+        return {
+            roomId: parsed.roomId,
+            displayName: parsed.displayName,
+            userId: parsed.userId,
+            roleId: typeof parsed.roleId === "string" ? parsed.roleId : "",
+        };
+    } catch {
+        return null;
+    }
+};
+
+const persistRejoinState = (state: PersistedRejoinState): void => {
+    if (typeof window === "undefined") {
+        return;
+    }
+
+    try {
+        window.sessionStorage.setItem(GROUP_INTERVIEW_REJOIN_KEY, JSON.stringify(state));
+    } catch {
+        return;
+    }
+};
+
+const clearPersistedRejoinState = (): void => {
+    if (typeof window === "undefined") {
+        return;
+    }
+
+    try {
+        window.sessionStorage.removeItem(GROUP_INTERVIEW_REJOIN_KEY);
+        // Limpiar también el localStorage viejo si existe (migración)
+        window.localStorage.removeItem(GROUP_INTERVIEW_REJOIN_KEY);
+    } catch {
+        return;
+    }
+};
+
+type LeaveRoomOptions = {
+    notifyServer?: boolean;
+    clearPersistedRejoin?: boolean;
+};
+
+type JoinRoomOptions = {
+    roomIdOverride?: string;
+    displayNameOverride?: string;
+    allowRejoinDuringInProgress?: boolean;
+};
 
 const resolveBackendHttpOrigin = (): string => {
     if (BACKEND_API_BASE) {
@@ -156,6 +249,23 @@ const resolveBackendHttpOrigin = (): string => {
         .replace(/\/+$/, "");
 
     return wsAsHttp.replace(/\/api\/ws$/i, "").replace(/\/ws$/i, "");
+};
+
+const resolveBackendWsBase = (): string => {
+    if (BACKEND_WS_BASE) {
+        return BACKEND_WS_BASE.replace(/\/+$/, "");
+    }
+
+    if (!BACKEND_API_BASE) {
+        return "";
+    }
+
+    const httpBase = BACKEND_API_BASE.replace(/\/+$/, "");
+    const wsBase = httpBase
+        .replace(/^https:\/\//i, "wss://")
+        .replace(/^http:\/\//i, "ws://");
+
+    return `${wsBase}/api/ws`;
 };
 
 const normalizeUserLabel = (name: string, socketId: string): string => {
@@ -211,6 +321,9 @@ function InterviewPageContent() {
     const roleId = router.isReady && typeof router.query.role_id === "string"
         ? router.query.role_id.trim()
         : "";
+    const roleNameFromQuery = router.isReady && typeof router.query.role_name === "string"
+        ? router.query.role_name.trim()
+        : "";
 
     const [displayName, setDisplayName] = React.useState("");
     const [roomId, setRoomId] = React.useState("");
@@ -220,24 +333,26 @@ function InterviewPageContent() {
     const [isConnecting, setIsConnecting] = React.useState(false);
     const [isMuted, setIsMuted] = React.useState(false);
     const [localLevel, setLocalLevel] = React.useState(0);
+    const [isSyncingState, setIsSyncingState] = React.useState(false);
+    const [roleDisplayName, setRoleDisplayName] = React.useState<string | null>(roleNameFromQuery || null);
     const [connectionStatus, setConnectionStatus] = React.useState<"disconnected" | "connecting" | "connected">("disconnected");
     const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
-    const [activeRound, setActiveRound] = React.useState<ActiveRound | null>(null);
-    const [isRecording, setIsRecording] = React.useState(false);
-    const [isSubmittingAudio, setIsSubmittingAudio] = React.useState(false);
-    const [transcription, setTranscription] = React.useState<string | null>(null);
-    const [evaluationId, setEvaluationId] = React.useState<string | null>(null);
-    const [evaluation, setEvaluation] = React.useState<EvaluationResult | null>(null);
+    const [sessionStatus, setSessionStatus] = React.useState<string>("idle");
+    const [activeRoundId, setActiveRoundId] = React.useState<string | null>(null);
+    const [activeRoundIndex, setActiveRoundIndex] = React.useState<number | null>(null);
+    const [totalRounds, setTotalRounds] = React.useState(0);
+    const [currentQuestion, setCurrentQuestion] = React.useState<AudioPlayerQuestion | null>(null);
     const [isHost, setIsHost] = React.useState(false);
-    const [sessionStatus, setSessionStatus] = React.useState<string | null>(null);
-    const [isGeneratingRound, setIsGeneratingRound] = React.useState(false);
+    const [runningAction, setRunningAction] = React.useState<GroupInterviewAction | null>(null);
+    const [isRecording, setIsRecording] = React.useState(false);
     const [recordingCountdown, setRecordingCountdown] = React.useState<number | null>(null);
+    const [evaluationResult, setEvaluationResult] = React.useState<EvaluationResult | null>(null);
+    const [evaluationId, setEvaluationId] = React.useState<string | null>(null);
+    const [isEvaluating, setIsEvaluating] = React.useState(false);
 
     const socketRef = React.useRef<WebSocket | null>(null);
     const localStreamRef = React.useRef<MediaStream | null>(null);
     const mediaRecorderRef = React.useRef<MediaRecorder | null>(null);
-    const answerRecorderRef = React.useRef<MediaRecorder | null>(null);
-    const answerChunksRef = React.useRef<Blob[]>([]);
     const selectedMimeTypeRef = React.useRef("");
     const selfIdRef = React.useRef("");
     const lastRecorderRestartAtRef = React.useRef(0);
@@ -247,10 +362,57 @@ function InterviewPageContent() {
     const senderPlayersRef = React.useRef<Map<string, SenderPlayer>>(new Map());
     const remoteLevelResetTimeoutsRef = React.useRef<Map<string, number>>(new Map());
     const backendHttpOriginRef = React.useRef(resolveBackendHttpOrigin());
+    const backendWsBaseRef = React.useRef(resolveBackendWsBase());
+    const processedRoundEventKeysRef = React.useRef<string[]>([]);
+    const autoRejoinAttemptedRef = React.useRef(false);
+
+    // Refs para estado que el socket.onmessage necesita leer siempre actualizado.
+    // El handler se define una sola vez (dentro de joinRoom) y captura el closure
+    // del momento de conexión; sin estas refs leería valores stale.
+    const activeRoundIdRef = React.useRef<string | null>(null);
+    const activeRoundIndexRef = React.useRef<number | null>(null);
+    const sessionStatusRef = React.useRef<string>("idle");
+    const totalRoundsRef = React.useRef<number>(0);
+    const currentQuestionRef = React.useRef<AudioPlayerQuestion | null>(null);
+    const answerRecorderRef = React.useRef<MediaRecorder | null>(null);
+    const answerChunksRef = React.useRef<Blob[]>([]);
     const autoRecordTimerRef = React.useRef<number | null>(null);
     const countdownIntervalRef = React.useRef<number | null>(null);
     const startRecordingFnRef = React.useRef<(() => void) | null>(null);
-    const stopSubmitFnRef = React.useRef<(() => Promise<void>) | null>(null);
+    const stopSubmitFnRef = React.useRef<(() => void) | null>(null);
+
+    const {
+        ttsStatus,
+        handleQuestionAudioReady,
+        handleTtsError,
+        handleRoundStarted: handleTTSRoundStarted,
+        cleanup: cleanupTTSAudio,
+    } = useTTSAudioPlayer(activeRoundId);
+
+    // Las refs se actualizan directamente en el handler del WebSocket (mismo tick de JS),
+    // no en useEffect. Esto elimina la ventana de carrera entre setActiveRoundId(...)
+    // y la validación del siguiente evento de la misma ráfaga (question_audio_ready
+    // llega inmediatamente después de question_generated y necesita ver el round_id ya actualizado).
+    // Los useEffect de sincronización introducían exactamente esa ventana.
+
+    const shouldProcessRoundEvent = React.useCallback((eventType: string, roundId?: string | null, roundIndex?: number | null) => {
+        const dedupKey = buildRoundEventDedupKey(eventType, roundId, roundIndex);
+        if (!dedupKey) {
+            return true;
+        }
+
+        const cache = processedRoundEventKeysRef.current;
+        if (cache.includes(dedupKey)) {
+            return false;
+        }
+
+        cache.push(dedupKey);
+        if (cache.length > 160) {
+            cache.splice(0, cache.length - 160);
+        }
+
+        return true;
+    }, []);
 
     const unlockPlayback = React.useCallback(async () => {
         try {
@@ -310,6 +472,106 @@ function InterviewPageContent() {
 
         return data.id;
     }, []);
+
+    const fetchSessionDetail = React.useCallback(async (headers: HeadersInit, sessionCode: string): Promise<GroupSessionDetailResponse> => {
+        const backendHttpOrigin = backendHttpOriginRef.current;
+        if (!backendHttpOrigin) {
+            throw new Error("No se encontró la URL del backend para obtener la sesión.");
+        }
+
+        const response = await fetch(
+            `${backendHttpOrigin}/api/group-sessions/${encodeURIComponent(sessionCode)}`,
+            {
+                method: "GET",
+                headers,
+            },
+        );
+
+        if (!response.ok) {
+            throw new Error("No se pudo obtener el detalle de la sesión grupal.");
+        }
+
+        return (await response.json()) as GroupSessionDetailResponse;
+    }, []);
+
+    const mapActionErrorMessage = React.useCallback((action: GroupInterviewAction, httpStatus: number) => {
+        if (httpStatus === 403) {
+            return "No autorizado: solo el host puede ejecutar esta acción.";
+        }
+
+        if (httpStatus === 404) {
+            return "No se encontró la sesión grupal solicitada.";
+        }
+
+        if (httpStatus === 409) {
+            if (action === "start") {
+                return "La sesión no está en estado waiting para iniciar.";
+            }
+
+            if (action === "next") {
+                return "No se puede crear otra ronda en el estado actual de la sesión.";
+            }
+
+            return "No se puede cerrar la sesión en el estado actual.";
+        }
+
+        if (httpStatus === 502 && action === "next") {
+            return "No se pudo generar la siguiente pregunta desde IA. Intenta nuevamente.";
+        }
+
+        return "No se pudo completar la acción solicitada.";
+    }, []);
+
+    const executeHostAction = React.useCallback(async (action: GroupInterviewAction) => {
+        const headers = getAuthHeaders();
+        const backendHttpOrigin = backendHttpOriginRef.current;
+        const sessionCode = roomId.trim().toUpperCase();
+
+        if (!headers || !backendHttpOrigin || !sessionCode) {
+            setErrorMessage("No se puede ejecutar la acción sin sesión válida y token activo.");
+            return;
+        }
+
+        let endpoint = `${backendHttpOrigin}/api/group-sessions/${encodeURIComponent(sessionCode)}/start`;
+        let body: string | undefined;
+
+        if (action === "next") {
+            endpoint = `${backendHttpOrigin}/api/group-sessions/${encodeURIComponent(sessionCode)}/rounds/next`;
+            body = JSON.stringify({});
+        }
+
+        if (action === "close") {
+            endpoint = `${backendHttpOrigin}/api/group-sessions/${encodeURIComponent(sessionCode)}/close`;
+        }
+
+        setRunningAction(action);
+        setErrorMessage(null);
+
+        try {
+            const response = await fetch(endpoint, {
+                method: "POST",
+                headers,
+                body,
+            });
+
+            if (!response.ok) {
+                setErrorMessage(mapActionErrorMessage(action, response.status));
+                return;
+            }
+
+            if (action === "start") {
+                setSessionStatus("in_progress");
+            }
+
+            if (action === "close") {
+                setSessionStatus("closed");
+            }
+        } catch {
+            setErrorMessage("Error de red al ejecutar la acción del host.");
+        } finally {
+            setRunningAction(null);
+        }
+    }, [getAuthHeaders, mapActionErrorMessage, roomId]);
 
     const ensureSessionCode = React.useCallback(
         async (headers: HeadersInit, desiredCode: string, roleId: string): Promise<string> => {
@@ -715,7 +977,9 @@ function InterviewPageContent() {
         }
     }, [startRecorder, stopRecorder]);
 
-    const leaveRoom = React.useCallback(async () => {
+    const leaveRoom = React.useCallback(async (options?: LeaveRoomOptions) => {
+        const notifyServer = options?.notifyServer ?? true;
+        const clearPersistedRejoin = options?.clearPersistedRejoin ?? false;
         const currentSelfId = selfIdRef.current;
 
         setConnectionStatus("disconnected");
@@ -723,15 +987,29 @@ function InterviewPageContent() {
         setSelfId("");
         setParticipants([]);
         setLocalLevel(0);
+        setIsSyncingState(false);
         setIsMuted(false);
-        setActiveRound(null);
-        setIsRecording(false);
-        setTranscription(null);
-        setEvaluation(null);
-        setEvaluationId(null);
+        setSessionStatus("idle");
+        setActiveRoundId(null);
+        setActiveRoundIndex(null);
+        setTotalRounds(0);
+        setCurrentQuestion(null);
         setIsHost(false);
-        setSessionStatus(null);
-        setIsGeneratingRound(false);
+        setRunningAction(null);
+        processedRoundEventKeysRef.current = [];
+
+        // Resetear refs de ronda inmediatamente para que no queden valores stale
+        // si el componente se reconecta sin desmontar.
+        activeRoundIdRef.current = null;
+        activeRoundIndexRef.current = null;
+        sessionStatusRef.current = "idle";
+        totalRoundsRef.current = 0;
+        currentQuestionRef.current = null;
+        setIsRecording(false);
+        setRecordingCountdown(null);
+        setEvaluationResult(null);
+        setEvaluationId(null);
+        setIsEvaluating(false);
 
         selfIdRef.current = "";
 
@@ -747,13 +1025,11 @@ function InterviewPageContent() {
             resyncTimersRef.current = [];
         }
 
-        const answerRecorder = answerRecorderRef.current;
-        if (answerRecorder && answerRecorder.state !== "inactive") {
-            try { answerRecorder.stop(); } catch { /* ignore */ }
+        if (answerRecorderRef.current && answerRecorderRef.current.state !== "inactive") {
+            answerRecorderRef.current.stop();
         }
         answerRecorderRef.current = null;
         answerChunksRef.current = [];
-
         if (autoRecordTimerRef.current !== null) {
             window.clearTimeout(autoRecordTimerRef.current);
             autoRecordTimerRef.current = null;
@@ -762,7 +1038,6 @@ function InterviewPageContent() {
             window.clearInterval(countdownIntervalRef.current);
             countdownIntervalRef.current = null;
         }
-        setRecordingCountdown(null);
 
         stopRecorder();
 
@@ -779,10 +1054,11 @@ function InterviewPageContent() {
         remoteLevelResetTimeoutsRef.current.clear();
 
         cleanupAllSenderPlayers();
+        cleanupTTSAudio();
 
         const socket = socketRef.current;
         if (socket) {
-            if (socket.readyState === WebSocket.OPEN && currentSelfId) {
+            if (notifyServer && socket.readyState === WebSocket.OPEN && currentSelfId) {
                 sendJson({
                     event: "leave",
                     from: currentSelfId,
@@ -792,17 +1068,21 @@ function InterviewPageContent() {
             socket.close();
             socketRef.current = null;
         }
-    }, [cleanupAllSenderPlayers, sendJson, stopRecorder]);
+
+        if (clearPersistedRejoin) {
+            clearPersistedRejoinState();
+        }
+    }, [cleanupAllSenderPlayers, cleanupTTSAudio, sendJson, stopRecorder]);
 
     React.useEffect(() => {
         return () => {
-            void leaveRoom();
+            void leaveRoom({ notifyServer: false });
         };
     }, [leaveRoom]);
 
-    const joinRoom = React.useCallback(async () => {
-        const safeRoomId = roomId.trim();
-        const safeDisplayName = displayName.trim();
+    const joinRoom = React.useCallback(async (options?: JoinRoomOptions) => {
+        const safeRoomId = (options?.roomIdOverride ?? roomId).trim();
+        const safeDisplayName = (options?.displayNameOverride ?? displayName).trim();
 
         if (!safeDisplayName) {
             setErrorMessage("Debes ingresar tu nombre para entrar.");
@@ -823,7 +1103,7 @@ function InterviewPageContent() {
 
         try {
             await unlockPlayback();
-            await leaveRoom();
+            await leaveRoom({ notifyServer: false });
 
             const headers = getAuthHeaders();
             if (!headers) {
@@ -832,15 +1112,25 @@ function InterviewPageContent() {
 
             const resolvedUserId = await getCurrentUserId(headers);
             const resolvedSessionCode = await ensureSessionCode(headers, safeRoomId, roleId);
+            const sessionDetail = await fetchSessionDetail(headers, resolvedSessionCode);
 
-            const sessionRes = await fetch(
-                `${backendHttpOriginRef.current}/api/group-sessions/${encodeURIComponent(resolvedSessionCode)}`,
-                { headers },
-            );
-            if (sessionRes.ok) {
-                const sessionData = await sessionRes.json() as { host_id: number; status: string };
-                setIsHost(sessionData.host_id === resolvedUserId);
-                setSessionStatus(sessionData.status);
+            const resolvedUserIdAsString = String(resolvedUserId);
+            const persisted = readPersistedRejoinState();
+            const isKnownRejoin =
+                options?.allowRejoinDuringInProgress
+                || (
+                    !!persisted
+                    && persisted.roomId.trim().toUpperCase() === resolvedSessionCode.trim().toUpperCase()
+                    && persisted.userId === resolvedUserIdAsString
+                );
+
+            // Validar estado de la sesión antes de conectar
+            const sessionStatus = sessionDetail.status || "waiting";
+            if (sessionStatus === "in_progress" && !isKnownRejoin) {
+                throw new Error("La entrevista ya ha comenzado. No se pueden agregar nuevos participantes.");
+            }
+            if (sessionStatus === "closed") {
+                throw new Error("La entrevista ha finalizado. No se pueden agregar participantes.");
             }
 
             const localStream = await navigator.mediaDevices.getUserMedia({
@@ -859,22 +1149,92 @@ function InterviewPageContent() {
                 setLocalLevel(level);
             });
 
-            const sessionUserId = String(resolvedUserId);
+            const sessionUserId = resolvedUserIdAsString;
             selfIdRef.current = sessionUserId;
             setSelfId(sessionUserId);
             setRoomId(resolvedSessionCode);
+            setDisplayName(safeDisplayName);
+            setIsHost(sessionDetail.host_id === resolvedUserId);
+            setSessionStatus(sessionStatus);
 
             const encodedRoom = encodeURIComponent(resolvedSessionCode);
             const encodedUser = encodeURIComponent(sessionUserId);
-            const wsUrl = `${BACKEND_WS_BASE}/${encodedRoom}/${encodedUser}`;
+            const backendWsBase = backendWsBaseRef.current;
+            if (!backendWsBase) {
+                throw new Error("No se encontró la URL del backend para WebSocket.");
+            }
+
+            const wsUrl = `${backendWsBase}/${encodedRoom}/${encodedUser}`;
 
             const socket = new WebSocket(wsUrl);
             socket.binaryType = "arraybuffer";
             socketRef.current = socket;
 
+            const syncRoomState = async () => {
+                const backendHttpOrigin = backendHttpOriginRef.current;
+                if (!backendHttpOrigin) {
+                    return;
+                }
+
+                setIsSyncingState(true);
+                try {
+                    const stateResponse = await fetch(
+                        `${backendHttpOrigin}/api/group-sessions/${encodeURIComponent(resolvedSessionCode)}/state`,
+                        {
+                            method: "GET",
+                            headers,
+                        },
+                    );
+
+                    if (!stateResponse.ok) {
+                        return;
+                    }
+
+                    const snapshot = await stateResponse.json();
+                    const restored = extractGroupInterviewUiState(snapshot);
+
+                    // Actualizar refs inmediatamente junto con los setters de estado
+                    // para que el handler WebSocket vea los valores correctos de inmediato.
+                    activeRoundIdRef.current = restored.roundId;
+                    activeRoundIndexRef.current = restored.roundIndex;
+                    sessionStatusRef.current = restored.status;
+                    totalRoundsRef.current = restored.totalRounds;
+
+                    setSessionStatus(restored.status);
+                    setActiveRoundId(restored.roundId);
+                    setActiveRoundIndex(restored.roundIndex);
+                    setTotalRounds(restored.totalRounds);
+
+                    if (restored.question) {
+                        const skill = restored.question.targetSkill ?? "General";
+                        const difficulty = restored.question.difficulty ?? "N/A";
+
+                        const restoredQuestion: AudioPlayerQuestion = {
+                            id: restored.question.roundId || `round-${restored.question.roundIndex ?? "active"}`,
+                            text: restored.question.text,
+                            note: `Skill objetivo: ${skill} | Dificultad: ${difficulty}`,
+                        };
+                        currentQuestionRef.current = restoredQuestion;
+                        setCurrentQuestion(restoredQuestion);
+                    }
+                } catch {
+                    return;
+                } finally {
+                    setIsSyncingState(false);
+                }
+            };
+
             socket.onopen = () => {
                 setConnectionStatus("connected");
                 setIsJoined(true);
+                void syncRoomState();
+
+                persistRejoinState({
+                    roomId: resolvedSessionCode,
+                    displayName: safeDisplayName,
+                    userId: sessionUserId,
+                    roleId,
+                });
 
                 sendJson({
                     event: "join",
@@ -896,13 +1256,44 @@ function InterviewPageContent() {
                 resyncTimersRef.current.push(t1, t2);
             };
 
-            socket.onclose = () => {
+            socket.onclose = (closeEvent) => {
                 setConnectionStatus("disconnected");
+                // Si el cierre ocurre antes de que onopen se haya disparado,
+                // significa que la conexión nunca se estableció.
+                if (!isJoined) {
+                    const reason = closeEvent.reason || "";
+
+                    if (reason === "session_already_started") {
+                        // La sesión ya terminó o está cerrada — limpiar rejoin state
+                        // para que el usuario pueda unirse a una sesión nueva.
+                        clearPersistedRejoinState();
+                        setErrorMessage(
+                            "Esta sesión ya ha finalizado o fue cerrada. Crea una nueva sesión para continuar."
+                        );
+                    } else if (reason === "group_session_not_found") {
+                        clearPersistedRejoinState();
+                        setErrorMessage(
+                            "El Session Code no existe o ya no está disponible. Verifica el código e intenta de nuevo."
+                        );
+                    } else if (reason === "user_not_found") {
+                        setErrorMessage(
+                            "Tu usuario no fue encontrado. Vuelve a iniciar sesión."
+                        );
+                    } else {
+                        const detail = reason
+                            ? ` (${reason})`
+                            : closeEvent.code !== 1000 ? ` (código ${closeEvent.code})` : "";
+                        setErrorMessage(
+                            `No se pudo conectar a la sala${detail}. Verifica que el backend esté corriendo y que el Session Code sea válido.`
+                        );
+                    }
+                }
             };
 
             socket.onerror = () => {
-                const errorMsg = "Error en conexion WebSocket";
-                setErrorMessage(`Error conectando: ${errorMsg}. Revisa firewall, CORS, y que el backend este disponible.`);
+                // onerror siempre va seguido de onclose — el mensaje real se pone en onclose
+                // para tener el código de cierre disponible. Aquí solo logueamos.
+                console.warn("[ws] Error de conexión WebSocket");
             };
 
             socket.onmessage = (event: MessageEvent) => {
@@ -960,35 +1351,137 @@ function InterviewPageContent() {
                     return;
                 }
 
-                // ── Eventos del servidor (sin remitente peer) ──────────────────
-                if (payload.event === "question_generated") {
-                    setActiveRound({
-                        roundId: payload.round_id ?? "",
-                        roundIndex: payload.round_index ?? 0,
-                        questionText: payload.question_text ?? "",
-                        targetSkill: payload.target_skill ?? null,
-                    });
-                    setTranscription(null);
-                    setEvaluation(null);
-                    setEvaluationId(null);
+                // Validación fuerte de ronda vieja para question_generated / question_new:
+                // si el evento trae un round_index menor al activo, es un evento tardío y se descarta.
+                // round_id es la fuente principal; round_index es apoyo secundario.
+                if (payload.event === "question_generated" || payload.event === "question_new") {
+                    const eventRoundId = payload.round_id;
+                    const eventRoundIndex = payload.round_index !== undefined
+                        ? Number(payload.round_index)
+                        : null;
+                    const currentIndex = activeRoundIndexRef.current;
+
+                    // Descartar si el round_id ya no coincide con la ronda activa
+                    // (puede haber cambiado por round_started de una ronda más nueva)
+                    if (eventRoundId && activeRoundIdRef.current && eventRoundId !== activeRoundIdRef.current) {
+                        return;
+                    }
+                    // Descartar si el round_index es menor al activo (evento tardío de ronda anterior)
+                    if (
+                        eventRoundIndex !== null
+                        && !Number.isNaN(eventRoundIndex)
+                        && currentIndex !== null
+                        && eventRoundIndex < currentIndex
+                    ) {
+                        return;
+                    }
+                }
+
+                const nextState = applyGroupInterviewEvent(
+                    {
+                        status: sessionStatusRef.current,
+                        roundId: activeRoundIdRef.current,
+                        roundIndex: activeRoundIndexRef.current,
+                        totalRounds: totalRoundsRef.current,
+                        question: currentQuestionRef.current
+                            ? {
+                                roundId: activeRoundIdRef.current,
+                                roundIndex: activeRoundIndexRef.current,
+                                text: currentQuestionRef.current.text,
+                                targetSkill: null,
+                                difficulty: null,
+                            }
+                            : null,
+                    },
+                    payload,
+                    shouldProcessRoundEvent,
+                );
+
+                const stateChanged =
+                    nextState.status !== sessionStatusRef.current
+                    || nextState.roundId !== activeRoundIdRef.current
+                    || nextState.roundIndex !== activeRoundIndexRef.current
+                    || nextState.totalRounds !== totalRoundsRef.current
+                    || nextState.question;
+
+                if (stateChanged) {
+                    // Actualizar las refs INMEDIATAMENTE, en el mismo tick de JS,
+                    // antes de que llegue el siguiente evento de la misma ráfaga.
+                    // Esto elimina la ventana de carrera: question_audio_ready llega
+                    // justo después de question_generated y necesita ver el round_id
+                    // ya actualizado en activeRoundIdRef.current.
+                    // Los setters de React son asíncronos (schedula re-render);
+                    // las refs son síncronas y están disponibles de inmediato.
+                    if (nextState.roundId !== activeRoundIdRef.current) {
+                        activeRoundIdRef.current = nextState.roundId;
+                    }
+                    if (nextState.roundIndex !== activeRoundIndexRef.current) {
+                        activeRoundIndexRef.current = nextState.roundIndex;
+                    }
+                    if (nextState.status !== sessionStatusRef.current) {
+                        sessionStatusRef.current = nextState.status;
+                    }
+                    if (nextState.totalRounds !== totalRoundsRef.current) {
+                        totalRoundsRef.current = nextState.totalRounds;
+                    }
+
+                    setSessionStatus(nextState.status);
+                    setActiveRoundId(nextState.roundId);
+                    setActiveRoundIndex(nextState.roundIndex);
+                    setTotalRounds(nextState.totalRounds);
+
+                    if (nextState.question) {
+                        const nextQuestion: AudioPlayerQuestion = {
+                            id: nextState.question.roundId || `round-${nextState.question.roundIndex ?? "active"}`,
+                            text: nextState.question.text,
+                            note: `Skill objetivo: ${nextState.question.targetSkill ?? "General"} | Dificultad: ${nextState.question.difficulty ?? "N/A"}`,
+                        };
+                        currentQuestionRef.current = nextQuestion;
+                        setCurrentQuestion(nextQuestion);
+                    }
+                }
+
+                if (
+                    payload.event === "interview_started"
+                    || payload.event === "interview_closed"
+                    || payload.event === "round_started"
+                    || payload.event === "question_generated"
+                    || payload.event === "question_new"
+                ) {
+                    if (payload.event === "interview_closed") {
+                        clearPersistedRejoinState();
+                    }
+                    if (payload.event === "round_started") {
+                        // Actualizar ref de ronda inmediatamente para que question_audio_ready
+                        // que llegue en la misma ráfaga ya vea el round_id correcto.
+                        if (payload.round_id) {
+                            activeRoundIdRef.current = payload.round_id;
+                        }
+                        handleTTSRoundStarted(payload.round_id ?? null);
+                    }
                     return;
                 }
 
-                if (payload.event === "interview_started") {
-                    setSessionStatus("in_progress");
+                // Eventos de audio TTS automático.
+                // Validación estricta: round_id debe coincidir con activeRoundIdRef.current.
+                // La ref ya fue actualizada síncronamente cuando llegó question_generated
+                // o round_started, por lo que no hay ventana de carrera.
+                if (payload.event === "question_audio_ready") {
+                    const eventRoundId = (payload as QuestionAudioReadyPayload).round_id;
+                    if (eventRoundId && eventRoundId === activeRoundIdRef.current) {
+                        handleQuestionAudioReady(payload as QuestionAudioReadyPayload);
+                    }
                     return;
                 }
 
-                if (payload.event === "interview_closed") {
-                    setSessionStatus("closed");
+                if (payload.event === "tts_error") {
+                    const eventRoundId = (payload as TtsErrorPayload).round_id;
+                    if (eventRoundId && eventRoundId === activeRoundIdRef.current) {
+                        handleTtsError(payload as TtsErrorPayload);
+                    }
                     return;
                 }
 
-                if (payload.event === "round_started" || payload.event === "answer_transcribed") {
-                    return;
-                }
-
-                // ── Eventos peer (filtrar self) ─────────────────────────────────
                 const senderId = payload.from || payload.user_id || "";
                 if (!senderId || senderId === sessionUserId) {
                     return;
@@ -1023,11 +1516,52 @@ function InterviewPageContent() {
             const fallback = "No fue posible conectarte a la sala. Revisa permisos de microfono y vuelve a intentar.";
             const msg = error instanceof Error && error.message ? error.message : fallback;
             setErrorMessage(msg);
-            await leaveRoom();
+            await leaveRoom({ notifyServer: false });
         } finally {
             setIsConnecting(false);
         }
-    }, [appendChunkForSender, cleanupSenderPlayer, ensureSessionCode, getAuthHeaders, getCurrentUserId, leaveRoom, markRemoteActivity, removeParticipant, requestResync, restartRecorderForNewPeer, roleId, roomId, sendJson, startAudioLevelMonitor, startRecorder, unlockPlayback, updateParticipant, displayName]);
+    }, [appendChunkForSender, cleanupSenderPlayer, ensureSessionCode, fetchSessionDetail, getAuthHeaders, getCurrentUserId, handleQuestionAudioReady, handleTtsError, handleTTSRoundStarted, leaveRoom, markRemoteActivity, removeParticipant, requestResync, restartRecorderForNewPeer, roleId, roomId, sendJson, shouldProcessRoundEvent, startAudioLevelMonitor, startRecorder, unlockPlayback, updateParticipant, displayName]);
+
+    React.useEffect(() => {
+        const persisted = readPersistedRejoinState();
+        if (!persisted) {
+            return;
+        }
+
+        if (!displayName.trim()) {
+            setDisplayName(persisted.displayName);
+        }
+
+        if (!roomId.trim()) {
+            setRoomId(persisted.roomId);
+        }
+    }, [displayName, roomId]);
+
+    React.useEffect(() => {
+        if (!router.isReady || isJoined || isConnecting || autoRejoinAttemptedRef.current) {
+            return;
+        }
+
+        const persisted = readPersistedRejoinState();
+        if (!persisted) {
+            return;
+        }
+
+        if (persisted.roleId && roleId && persisted.roleId !== roleId) {
+            return;
+        }
+
+        if (!displayName.trim() || !roomId.trim()) {
+            return;
+        }
+
+        autoRejoinAttemptedRef.current = true;
+        void joinRoom({
+            roomIdOverride: persisted.roomId,
+            displayNameOverride: persisted.displayName,
+            allowRejoinDuringInProgress: true,
+        });
+    }, [displayName, isConnecting, isJoined, joinRoom, roleId, roomId, router.isReady]);
 
     const toggleMute = () => {
         const localStream = localStreamRef.current;
@@ -1052,163 +1586,81 @@ function InterviewPageContent() {
         }
     };
 
-    const generateNextRound = React.useCallback(async () => {
-        const headers = getAuthHeaders();
-        if (!headers || !roomId) return;
-
-        setIsGeneratingRound(true);
-        setErrorMessage(null);
-        try {
-            if (sessionStatus === "waiting") {
-                const startRes = await fetch(
-                    `${backendHttpOriginRef.current}/api/group-sessions/${roomId}/start`,
-                    { method: "POST", headers },
-                );
-                if (!startRes.ok) {
-                    const err = await startRes.json().catch(() => ({})) as { detail?: string };
-                    throw new Error(err.detail ?? "No se pudo iniciar la sesión.");
-                }
-                setSessionStatus("in_progress");
-            }
-
-            const roundRes = await fetch(
-                `${backendHttpOriginRef.current}/api/group-sessions/${roomId}/rounds/next`,
-                {
-                    method: "POST",
-                    headers,
-                    body: JSON.stringify({ target_skill: null, difficulty: null }),
-                },
-            );
-            if (!roundRes.ok) {
-                const err = await roundRes.json().catch(() => ({})) as { detail?: string };
-                throw new Error(err.detail ?? "No se pudo generar la pregunta.");
-            }
-        } catch (error) {
-            const msg = error instanceof Error ? error.message : "Error generando la pregunta.";
-            setErrorMessage(msg);
-        } finally {
-            setIsGeneratingRound(false);
-        }
-    }, [getAuthHeaders, roomId, sessionStatus]);
-
     const startAnswerRecording = React.useCallback(() => {
+        if (!localStreamRef.current) return;
         const stream = localStreamRef.current;
-        if (!stream || !isJoined) return;
-
+        const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+            ? "audio/webm;codecs=opus"
+            : "audio/webm";
+        const recorder = new MediaRecorder(stream, { mimeType });
         answerChunksRef.current = [];
-        const mimeType = selectedMimeTypeRef.current || "";
+        recorder.ondataavailable = (e) => {
+            if (e.data.size > 0) answerChunksRef.current.push(e.data);
+        };
+        recorder.start(250);
+        answerRecorderRef.current = recorder;
+        setIsRecording(true);
+    }, []);
 
-        try {
-            const recorder = mimeType
-                ? new MediaRecorder(stream, { mimeType })
-                : new MediaRecorder(stream);
-
-            recorder.ondataavailable = (e) => {
-                if (e.data.size > 0) answerChunksRef.current.push(e.data);
-            };
-
-            answerRecorderRef.current = recorder;
-            recorder.start(250);
-            setIsRecording(true);
-        } catch {
-            setErrorMessage("No se pudo iniciar la grabación de respuesta.");
-        }
-    }, [isJoined]);
-
-    const stopAndSubmitAnswer = React.useCallback(async () => {
-        if (autoRecordTimerRef.current !== null) {
-            window.clearTimeout(autoRecordTimerRef.current);
-            autoRecordTimerRef.current = null;
-        }
-        if (countdownIntervalRef.current !== null) {
-            window.clearInterval(countdownIntervalRef.current);
-            countdownIntervalRef.current = null;
-        }
-        setRecordingCountdown(null);
-
+    const stopAndSubmitAnswer = React.useCallback(() => {
         const recorder = answerRecorderRef.current;
-        if (!recorder || recorder.state === "inactive") {
-            setIsRecording(false);
-            return;
-        }
-
-        await new Promise<void>((resolve) => {
-            recorder.onstop = () => resolve();
-            recorder.stop();
-        });
-
-        setIsRecording(false);
-        answerRecorderRef.current = null;
-
-        const chunks = answerChunksRef.current;
-        if (!chunks.length || !activeRound) return;
-
-        const mimeType = selectedMimeTypeRef.current || "audio/webm";
-        const rawBlob = new Blob(chunks, { type: mimeType });
-        const blob = await convertBlobToWav(rawBlob).catch(() => rawBlob);
-        const ext = blob.type === "audio/wav" ? "wav" : (mimeType.split("/")[1]?.split(";")[0] ?? "webm");
-
-        setIsSubmittingAudio(true);
-        setTranscription(null);
-        setEvaluation(null);
-        setEvaluationId(null);
-
-        try {
+        if (!recorder || recorder.state === "inactive") return;
+        recorder.onstop = async () => {
+            const roundId = activeRoundIdRef.current;
+            if (!roundId) return;
+            const blob = new Blob(answerChunksRef.current, { type: recorder.mimeType });
+            const wavBlob = await convertBlobToWav(blob);
             const token = getAccessToken();
-            const formData = new FormData();
-            formData.append("audio_file", blob, `answer.${ext}`);
-            formData.append("round_id", activeRound.roundId);
-
-            const response = await fetch(
-                `${backendHttpOriginRef.current}/api/group-sessions/${roomId}/answers/audio`,
-                {
-                    method: "POST",
-                    headers: { Authorization: `Bearer ${token}` },
-                    body: formData,
-                },
-            );
-
-            if (!response.ok) {
-                const err = await response.json().catch(() => ({})) as { detail?: string };
-                throw new Error(err.detail ?? "Error al enviar respuesta de audio.");
+            if (!token) return;
+            try {
+                setIsEvaluating(true);
+                const fd = new FormData();
+                fd.append("audio", wavBlob, "answer.wav");
+                const res = await fetch(
+                    `${backendHttpOriginRef.current ?? ""}/api/evaluation/submit/${roundId}`,
+                    { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: fd }
+                );
+                if (!res.ok) throw new Error("submit failed");
+                const data = (await res.json()) as { evaluation_id: string };
+                setEvaluationId(data.evaluation_id);
+            } catch {
+                setIsEvaluating(false);
             }
-
-            const data = await response.json() as { transcription: string; evaluation_id: string };
-            setTranscription(data.transcription);
-            setEvaluationId(data.evaluation_id);
-        } catch (error) {
-            const msg = error instanceof Error ? error.message : "Error al enviar respuesta de audio.";
-            setErrorMessage(msg);
-        } finally {
-            setIsSubmittingAudio(false);
-        }
-    }, [activeRound, roomId]);
+            answerRecorderRef.current = null;
+            answerChunksRef.current = [];
+            setIsRecording(false);
+        };
+        recorder.stop();
+    }, []);
 
     React.useEffect(() => {
-        if (!evaluationId) return;
-
+        if (!evaluationId || !isEvaluating) return;
         const token = getAccessToken();
-        const backendOrigin = backendHttpOriginRef.current;
-
-        const intervalId = window.setInterval(async () => {
+        if (!token) return;
+        let cancelled = false;
+        const poll = async () => {
             try {
                 const res = await fetch(
-                    `${backendOrigin}/evaluations/evaluation/${evaluationId}`,
-                    { headers: { Authorization: `Bearer ${token}` } },
+                    `${backendHttpOriginRef.current ?? ""}/api/evaluation/${evaluationId}`,
+                    { headers: { Authorization: `Bearer ${token}` } }
                 );
                 if (!res.ok) return;
-                const data = await res.json() as EvaluationResult;
-                if (data.status !== "pending") {
-                    setEvaluation(data);
-                    window.clearInterval(intervalId);
+                const data = (await res.json()) as EvaluationResult;
+                if (data.status === "completed" || data.status === "failed") {
+                    if (!cancelled) {
+                        setEvaluationResult(data);
+                        setIsEvaluating(false);
+                    }
+                } else if (!cancelled) {
+                    setTimeout(() => void poll(), 3000);
                 }
             } catch {
-                // ignore polling errors
+                if (!cancelled) setIsEvaluating(false);
             }
-        }, 2000);
-
-        return () => window.clearInterval(intervalId);
-    }, [evaluationId]);
+        };
+        void poll();
+        return () => { cancelled = true; };
+    }, [evaluationId, isEvaluating]);
 
     React.useEffect(() => {
         startRecordingFnRef.current = startAnswerRecording;
@@ -1216,38 +1668,40 @@ function InterviewPageContent() {
     }, [startAnswerRecording, stopAndSubmitAnswer]);
 
     React.useEffect(() => {
-        if (!activeRound?.roundId || !isJoined) return;
+        setEvaluationResult(null);
+        setEvaluationId(null);
+        setIsEvaluating(false);
+        setIsRecording(false);
+        setRecordingCountdown(null);
+    }, [activeRoundId]);
 
-        if (autoRecordTimerRef.current !== null) {
-            window.clearTimeout(autoRecordTimerRef.current);
-            autoRecordTimerRef.current = null;
+    React.useEffect(() => {
+        if (ttsStatus !== "ended" || !activeRoundId) {
+            if (autoRecordTimerRef.current !== null) {
+                window.clearTimeout(autoRecordTimerRef.current);
+                autoRecordTimerRef.current = null;
+            }
+            if (countdownIntervalRef.current !== null) {
+                window.clearInterval(countdownIntervalRef.current);
+                countdownIntervalRef.current = null;
+            }
+            setRecordingCountdown(null);
+            return;
         }
-        if (countdownIntervalRef.current !== null) {
-            window.clearInterval(countdownIntervalRef.current);
-            countdownIntervalRef.current = null;
-        }
-
-        startRecordingFnRef.current?.();
-        setRecordingCountdown(5);
-
+        let count = 5;
+        setRecordingCountdown(count);
         countdownIntervalRef.current = window.setInterval(() => {
-            setRecordingCountdown((prev) => {
-                if (prev === null || prev <= 1) {
-                    if (countdownIntervalRef.current !== null) {
-                        window.clearInterval(countdownIntervalRef.current);
-                        countdownIntervalRef.current = null;
-                    }
-                    return null;
-                }
-                return prev - 1;
-            });
+            count -= 1;
+            setRecordingCountdown(count);
+            if (count <= 0) {
+                window.clearInterval(countdownIntervalRef.current!);
+                countdownIntervalRef.current = null;
+            }
         }, 1000);
-
         autoRecordTimerRef.current = window.setTimeout(() => {
-            void stopSubmitFnRef.current?.();
             autoRecordTimerRef.current = null;
+            if (!answerRecorderRef.current) startRecordingFnRef.current?.();
         }, 5000);
-
         return () => {
             if (autoRecordTimerRef.current !== null) {
                 window.clearTimeout(autoRecordTimerRef.current);
@@ -1257,35 +1711,69 @@ function InterviewPageContent() {
                 window.clearInterval(countdownIntervalRef.current);
                 countdownIntervalRef.current = null;
             }
+            setRecordingCountdown(null);
         };
-    }, [activeRound?.roundId, isJoined]);
+    }, [ttsStatus, activeRoundId]);
 
     const localName = displayName.trim() || "Tu usuario";
     const activeRemoteCount = participants.length;
     const accessToken = typeof window !== "undefined" ? getAccessToken() : null;
-    const activeQuestion = React.useMemo<AudioPlayerQuestion>(() => {
-        if (activeRound?.questionText) {
-            return {
-                id: `round-${activeRound.roundId}`,
-                text: activeRound.questionText,
-                note: `Ronda ${activeRound.roundIndex}${activeRound.targetSkill ? ` · ${activeRound.targetSkill}` : ""}`,
-            };
-        }
+    const startDisabled = sessionStatus !== "waiting" || runningAction !== null;
+    const nextDisabled = sessionStatus !== "in_progress" || runningAction !== null;
+    const closeDisabled = sessionStatus !== "in_progress" || runningAction !== null;
+
+    React.useEffect(() => {
+        let cancelled = false;
+
+        const loadRoleDisplayName = async () => {
+            if (roleNameFromQuery) {
+                setRoleDisplayName(roleNameFromQuery);
+                return;
+            }
+
+            if (!roleId || !accessToken) {
+                setRoleDisplayName(null);
+                return;
+            }
+
+            try {
+                const roleDetail = await getRoleDetail(roleId, accessToken);
+                if (!cancelled) {
+                    setRoleDisplayName(roleDetail.role_name || null);
+                }
+            } catch {
+                if (!cancelled) {
+                    setRoleDisplayName(null);
+                }
+            }
+        };
+
+        void loadRoleDisplayName();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [accessToken, roleId, roleNameFromQuery]);
+
+    const fallbackQuestion = React.useMemo<AudioPlayerQuestion>(() => {
+        const readableRoleName = roleDisplayName?.trim() || roleNameFromQuery || roleId || "el rol seleccionado";
 
         if (roleId) {
             return {
                 id: `intro-${roleId}`,
-                text: `Presentate y resume por que tu experiencia encaja con el rol ${roleId}.`,
-                note: "Pregunta de introducción",
+                text: `Presentate y resume por que tu experiencia encaja con el rol ${readableRoleName}.`,
+                note: "Pregunta activa derivada del rol seleccionado.",
             };
         }
 
         return {
             id: "intro-general",
             text: "Presentate y resume brevemente la experiencia mas relevante que aportarias en esta entrevista.",
-            note: "Pregunta general de introducción",
+            note: "Pregunta activa temporal mientras se define el flujo real de preguntas.",
         };
-    }, [activeRound, roleId]);
+    }, [roleDisplayName, roleId, roleNameFromQuery]);
+
+    const activeQuestion = currentQuestion || fallbackQuestion;
 
     return (
         <>
@@ -1325,187 +1813,248 @@ function InterviewPageContent() {
                             </div>
                             <div className="flex items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-xs font-medium text-white">
                                 <Plug className="h-3.5 w-3.5" />
-                                {connectionStatus === "connected" && "Conectado"}
+                                {connectionStatus === "connected" && isSyncingState && "Re-sincronizando sala..."}
+                                {connectionStatus === "connected" && !isSyncingState && "Conectado"}
                                 {connectionStatus === "connecting" && "Conectando..."}
                                 {connectionStatus === "disconnected" && "Desconectado"}
                             </div>
                         </div>
                     </section>
 
-                    <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                        <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-                            <div className="lg:col-span-4">
-                                <label htmlFor="displayName" className="mb-1.5 block text-sm font-medium text-slate-700">
-                                    Tu nombre
-                                </label>
-                                <input
-                                    id="displayName"
-                                    type="text"
-                                    value={displayName}
-                                    onChange={(event) => setDisplayName(event.target.value)}
-                                    placeholder="Ej: Camila Rojas"
-                                    className="h-10 w-full rounded-md border border-slate-300 px-3 text-sm text-slate-900 outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-200"
-                                />
+                    <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                        <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
+                            <div className="space-y-4 xl:col-span-8">
+                                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                                    <div>
+                                        <label htmlFor="displayName" className="mb-1.5 block text-sm font-medium text-slate-700">
+                                            Tu nombre
+                                        </label>
+                                        <input
+                                            id="displayName"
+                                            type="text"
+                                            value={displayName}
+                                            onChange={(event) => setDisplayName(event.target.value)}
+                                            placeholder="Ej: Camila Rojas"
+                                            className="h-10 w-full rounded-md border border-slate-300 px-3 text-sm text-slate-900 outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-200"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label htmlFor="roomId" className="mb-1.5 block text-sm font-medium text-slate-700">
+                                            Session Code
+                                        </label>
+                                        <div className="flex gap-2">
+                                            <input
+                                                id="roomId"
+                                                type="text"
+                                                value={roomId}
+                                                onChange={(event) => setRoomId(event.target.value)}
+                                                placeholder="Ej: ABCD1234 (vacío para crear uno nuevo)"
+                                                className="h-10 w-full rounded-md border border-slate-300 px-3 text-sm text-slate-900 outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-200"
+                                            />
+                                            <Button type="button" variant="outline" onClick={() => void copyRoomId()} className="gap-1.5">
+                                                <Copy className="h-4 w-4" />
+                                                Copiar
+                                            </Button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {errorMessage && (
+                                    <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                                        {errorMessage}
+                                    </p>
+                                )}
                             </div>
-                            <div className="lg:col-span-5">
-                                <label htmlFor="roomId" className="mb-1.5 block text-sm font-medium text-slate-700">
-                                    Session Code
-                                </label>
-                                <div className="flex gap-2">
-                                    <input
-                                        id="roomId"
-                                        type="text"
-                                        value={roomId}
-                                        onChange={(event) => setRoomId(event.target.value)}
-                                        placeholder="Ej: ABCD1234 (vacío para crear uno nuevo)"
-                                        className="h-10 w-full rounded-md border border-slate-300 px-3 text-sm text-slate-900 outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-200"
-                                    />
-                                    <Button type="button" variant="outline" onClick={() => void copyRoomId()} className="gap-1.5">
-                                        <Copy className="h-4 w-4" />
-                                        Copiar
+
+                            <div className="rounded-xl border border-cyan-100 bg-cyan-50/60 p-4 xl:col-span-4">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-cyan-700">Panel rápido</p>
+                                <div className="mt-3 space-y-2">
+                                    {!isJoined ? (
+                                        <Button
+                                            type="button"
+                                            className="h-10 w-full gap-2 bg-cyan-600 hover:bg-cyan-700"
+                                            onClick={() => void joinRoom()}
+                                            disabled={isConnecting}
+                                        >
+                                            <AudioLines className="h-4 w-4" />
+                                            {isConnecting ? "Conectando..." : "Unirme a la sala"}
+                                        </Button>
+                                    ) : (
+                                        <Button
+                                            type="button"
+                                            variant="destructive"
+                                            className="h-10 w-full gap-2"
+                                            onClick={() => void leaveRoom({ clearPersistedRejoin: true })}
+                                        >
+                                            <LogOut className="h-4 w-4" />
+                                            Salir de la sala
+                                        </Button>
+                                    )}
+
+                                    <Button type="button" variant="outline" onClick={toggleMute} disabled={!isJoined} className="h-10 w-full gap-2">
+                                        {isMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                                        {isMuted ? "Activar microfono" : "Silenciar microfono"}
                                     </Button>
                                 </div>
+
+                                <div className="mt-3 flex flex-wrap items-center gap-2">
+                                    <span className="rounded-full border border-cyan-200 bg-white px-3 py-1 text-xs font-medium text-cyan-700">
+                                        <Users className="mr-1 inline h-3.5 w-3.5" />
+                                        Participantes: {activeRemoteCount}
+                                    </span>
+                                </div>
                             </div>
-                            <div className="lg:col-span-3 lg:flex lg:items-end">
-                                {!isJoined ? (
-                                    <Button
-                                        type="button"
-                                        className="h-10 w-full gap-2 bg-cyan-600 hover:bg-cyan-700"
-                                        onClick={() => void joinRoom()}
-                                        disabled={isConnecting}
+                        </div>
+                    </section>
+
+                    <section className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-12">
+                        <aside className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm xl:col-span-4">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Estado de sesión</p>
+                            <div className="mt-3 flex flex-wrap items-center gap-2">
+                                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">
+                                    Estado: {sessionStatus}
+                                </span>
+                                <span className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-medium text-cyan-700">
+                                    Ronda: {activeRoundIndex ?? "--"}
+                                </span>
+                                <span className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700">
+                                    Total: {totalRounds}
+                                </span>
+                                <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
+                                    ID: {activeRoundId || "--"}
+                                </span>
+                            </div>
+
+                            {isJoined && isHost ? (
+                                <div className="mt-4 space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                                    <p className="text-xs font-medium text-slate-600">Controles host</p>
+                                    <NoiseBackground
+                                        containerClassName="w-full rounded-xl"
+                                        gradientColors={[
+                                            "rgb(14, 116, 244)",
+                                            "rgb(37, 99, 235)",
+                                            "rgb(6, 182, 212)",
+                                        ]}
                                     >
-                                        <AudioLines className="h-4 w-4" />
-                                        {isConnecting ? "Conectando..." : "Unirme a la sala"}
-                                    </Button>
-                                ) : (
+                                        <button
+                                            type="button"
+                                            onClick={() => void executeHostAction("start")}
+                                            disabled={startDisabled}
+                                            className="h-10 w-full cursor-pointer rounded-xl bg-linear-to-r from-blue-50 via-cyan-50 to-white px-4 py-2 text-sm font-semibold text-blue-900 shadow-[0px_2px_0px_0px_var(--color-slate-50)_inset,0px_0.5px_1px_0px_var(--color-blue-300)] transition-all duration-150 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                            Iniciar entrevista
+                                        </button>
+                                    </NoiseBackground>
+
+                                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                        <NoiseBackground
+                                            containerClassName="w-full rounded-xl"
+                                            gradientColors={[
+                                                "rgb(14, 116, 244)",
+                                                "rgb(37, 99, 235)",
+                                                "rgb(6, 182, 212)",
+                                            ]}
+                                        >
+                                            <button
+                                                type="button"
+                                                onClick={() => void executeHostAction("next")}
+                                                disabled={nextDisabled}
+                                                className="h-9 w-full cursor-pointer rounded-xl bg-linear-to-r from-blue-50 via-cyan-50 to-white px-3 py-2 text-sm font-semibold text-blue-900 shadow-[0px_2px_0px_0px_var(--color-slate-50)_inset,0px_0.5px_1px_0px_var(--color-blue-300)] transition-all duration-150 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+                                            >
+                                                Siguiente ronda
+                                            </button>
+                                        </NoiseBackground>
+
+                                        <NoiseBackground
+                                            containerClassName="w-full rounded-xl"
+                                            gradientColors={[
+                                                "rgb(239, 68, 68)",
+                                                "rgb(248, 113, 113)",
+                                                "rgb(252, 165, 165)",
+                                            ]}
+                                        >
+                                            <button
+                                                type="button"
+                                                onClick={() => void executeHostAction("close")}
+                                                disabled={closeDisabled}
+                                                className="h-9 w-full cursor-pointer rounded-xl bg-linear-to-r from-red-50 via-red-50 to-rose-50 px-3 py-2 text-sm font-semibold text-red-900 shadow-[0px_2px_0px_0px_var(--color-red-50)_inset,0px_0.5px_1px_0px_var(--color-red-300)] transition-all duration-150 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+                                            >
+                                                Finalizar entrevista
+                                            </button>
+                                        </NoiseBackground>
+                                    </div>
+                                </div>
+                            ) : (
+                                <p className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                                    Los controles de ronda están disponibles solo para el host conectado.
+                                </p>
+                            )}
+                        </aside>
+
+                        <div className="xl:col-span-8">
+                            <AudioPlayer question={activeQuestion} authToken={accessToken} ttsStatus={ttsStatus} />
+                        </div>
+                    </section>
+
+                    {activeRoundId && (
+                        <section className="grid grid-cols-1 gap-4">
+                            <article className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+                                <div className="mb-3 flex items-center gap-2 text-rose-800">
+                                    <Mic className="h-4 w-4" />
+                                    <h2 className="text-sm font-semibold uppercase tracking-wide">
+                                        Ronda {(activeRoundIndex ?? 0) + 1} — Tu respuesta
+                                    </h2>
+                                </div>
+                                {currentQuestion && (
+                                    <p className="mb-4 text-sm text-rose-700">{currentQuestion.text}</p>
+                                )}
+                                {recordingCountdown !== null && !isRecording && (
+                                    <p className="mb-2 text-sm font-medium text-rose-600">
+                                        Grabación automática en {recordingCountdown}s…
+                                    </p>
+                                )}
+                                <div className="flex gap-2">
                                     <Button
                                         type="button"
                                         variant="destructive"
-                                        className="h-10 w-full gap-2"
-                                        onClick={() => void leaveRoom()}
+                                        disabled={isRecording}
+                                        onClick={() => startAnswerRecording()}
+                                        className="gap-1.5"
                                     >
-                                        <LogOut className="h-4 w-4" />
-                                        Salir de la sala
+                                        <Mic className="h-4 w-4" />
+                                        {isRecording ? "Grabando…" : "Grabar"}
                                     </Button>
-                                )}
-                            </div>
-                        </div>
-
-                        {errorMessage && (
-                            <p className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                                {errorMessage}
-                            </p>
-                        )}
-
-                        <div className="mt-4 flex flex-wrap items-center gap-2">
-                            <Button type="button" variant="outline" onClick={toggleMute} disabled={!isJoined} className="gap-2">
-                                {isMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-                                {isMuted ? "Activar microfono" : "Silenciar microfono"}
-                            </Button>
-                            {isJoined && isHost && sessionStatus !== "closed" && (
-                                <Button
-                                    type="button"
-                                    onClick={() => void generateNextRound()}
-                                    disabled={isGeneratingRound}
-                                    className="gap-2 bg-cyan-600 hover:bg-cyan-700"
-                                >
-                                    <AudioLines className="h-4 w-4" />
-                                    {isGeneratingRound
-                                        ? "Generando..."
-                                        : activeRound
-                                        ? "Siguiente pregunta"
-                                        : "Iniciar entrevista"}
-                                </Button>
-                            )}
-                            <span className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-medium text-cyan-700">
-                                <Users className="mr-1 inline h-3.5 w-3.5" />
-                                Participantes remotos: {activeRemoteCount}
-                            </span>
-                        </div>
-                    </section>
-
-                    <section className="mb-6">
-                        <AudioPlayer question={activeQuestion} authToken={accessToken} />
-                    </section>
-
-                    {isJoined && activeRound && (
-                        <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                            <div className="mb-4">
-                                <span className="text-xs font-medium uppercase tracking-wide text-cyan-600">
-                                    Ronda {activeRound.roundIndex}{activeRound.targetSkill ? ` · ${activeRound.targetSkill}` : ""}
-                                </span>
-                                <p className="mt-1 text-sm font-medium text-slate-800">{activeRound.questionText}</p>
-                            </div>
-
-                            <div className="flex flex-wrap items-center gap-3">
-                                {recordingCountdown !== null ? (
-                                    <>
-                                        <span className="inline-flex animate-pulse items-center gap-2 rounded-full bg-red-100 px-4 py-2 text-sm font-semibold text-red-700">
-                                            <Mic className="h-4 w-4" />
-                                            Grabando... {recordingCountdown}s
-                                        </span>
-                                        <Button
-                                            type="button"
-                                            onClick={() => void stopAndSubmitAnswer()}
-                                            className="gap-2 bg-slate-800 hover:bg-slate-900"
-                                        >
-                                            <Square className="h-4 w-4" />
-                                            Enviar ahora
-                                        </Button>
-                                    </>
-                                ) : isRecording ? (
                                     <Button
                                         type="button"
-                                        onClick={() => void stopAndSubmitAnswer()}
-                                        className="gap-2 animate-pulse bg-slate-800 hover:bg-slate-900"
+                                        variant="outline"
+                                        disabled={!isRecording}
+                                        onClick={() => stopAndSubmitAnswer()}
+                                        className="gap-1.5"
                                     >
                                         <Square className="h-4 w-4" />
                                         Detener y enviar
                                     </Button>
-                                ) : null}
-                                {isSubmittingAudio && (
-                                    <span className="text-sm text-slate-500">Transcribiendo respuesta...</span>
-                                )}
-                            </div>
-
-                            {transcription && (
-                                <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
-                                    <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">Tu respuesta</p>
-                                    <p className="text-sm text-slate-800">{transcription}</p>
                                 </div>
-                            )}
-
-                            {evaluation && evaluation.status !== "pending" && (
-                                <div className={`mt-4 rounded-lg border p-4 ${
-                                    evaluation.score !== null && evaluation.score >= 70
-                                        ? "border-emerald-200 bg-emerald-50"
-                                        : evaluation.score !== null && evaluation.score >= 50
-                                        ? "border-yellow-200 bg-yellow-50"
-                                        : "border-red-200 bg-red-50"
-                                }`}>
-                                    <div className="mb-2 flex items-center justify-between">
-                                        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Evaluación automática</p>
-                                        {evaluation.score !== null && (
-                                            <span className={`text-sm font-bold ${
-                                                evaluation.score >= 70 ? "text-emerald-700" : evaluation.score >= 50 ? "text-yellow-700" : "text-red-700"
-                                            }`}>
-                                                {evaluation.score}/100
-                                            </span>
+                                {isEvaluating && (
+                                    <p className="mt-3 text-sm text-rose-600">Evaluando respuesta…</p>
+                                )}
+                                {evaluationResult && (
+                                    <div className="mt-3 rounded-xl border border-rose-300 bg-white p-3 space-y-2">
+                                        {evaluationResult.transcription && (
+                                            <div>
+                                                <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">Transcripción</p>
+                                                <p className="mt-0.5 text-sm text-rose-800 italic">"{evaluationResult.transcription}"</p>
+                                            </div>
+                                        )}
+                                        <p className="text-sm font-semibold text-rose-800">
+                                            Puntuación: {evaluationResult.score ?? "—"}
+                                        </p>
+                                        {evaluationResult.feedback && (
+                                            <p className="text-sm text-rose-700">{evaluationResult.feedback}</p>
                                         )}
                                     </div>
-                                    {evaluation.feedback && (
-                                        <p className="whitespace-pre-line text-sm text-slate-700">{evaluation.feedback}</p>
-                                    )}
-                                    {evaluation.score_breakdown && (
-                                        <div className="mt-3 grid grid-cols-2 gap-1 text-xs text-slate-500">
-                                            <span>Correctitud: {evaluation.score_breakdown.correctness}</span>
-                                            <span>Completitud: {evaluation.score_breakdown.completeness}</span>
-                                            <span>Claridad: {evaluation.score_breakdown.clarity}</span>
-                                            <span>Ejemplos: {evaluation.score_breakdown.examples}</span>
-                                        </div>
-                                    )}
-                                </div>
-                            )}
+                                )}
+                            </article>
                         </section>
                     )}
 
@@ -1519,12 +2068,12 @@ function InterviewPageContent() {
                             <p className="mt-2 text-sm text-cyan-700">
                                 {isMuted ? "Microfono silenciado" : "Microfono activo"}
                             </p>
-                            <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-cyan-100">
-                                <div
-                                    className="h-full rounded-full bg-cyan-600 transition-all"
-                                    style={{ width: `${Math.min(100, Math.round(localLevel * 500))}%` }}
-                                />
-                            </div>
+                            <progress
+                                className="mt-4 h-2 w-full overflow-hidden rounded-full appearance-none [&::-webkit-progress-bar]:rounded-full [&::-webkit-progress-bar]:bg-cyan-100 [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-cyan-600 [&::-moz-progress-bar]:rounded-full [&::-moz-progress-bar]:bg-cyan-600"
+                                max={100}
+                                value={Math.min(100, Math.round(localLevel * 500))}
+                                aria-label="Nivel de audio local"
+                            />
                             <p className="mt-2 text-xs text-cyan-700">Nivel de audio local</p>
                             <p className="mt-2 text-xs text-cyan-600">User ID: {selfId || "--"}</p>
                         </article>
@@ -1568,14 +2117,16 @@ function InterviewPageContent() {
                                                     </span>
                                                 </div>
 
-                                                <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-slate-100">
-                                                    <div
-                                                        className={`h-full rounded-full transition-all ${
-                                                            isSpeaking ? "bg-emerald-500" : "bg-cyan-500"
-                                                        }`}
-                                                        style={{ width: `${levelWidth}%` }}
-                                                    />
-                                                </div>
+                                                <progress
+                                                    className={`mt-4 h-2 w-full overflow-hidden rounded-full appearance-none [&::-webkit-progress-bar]:rounded-full [&::-webkit-progress-bar]:bg-slate-100 [&::-webkit-progress-value]:rounded-full [&::-moz-progress-bar]:rounded-full ${
+                                                        isSpeaking
+                                                            ? "[&::-webkit-progress-value]:bg-emerald-500 [&::-moz-progress-bar]:bg-emerald-500"
+                                                            : "[&::-webkit-progress-value]:bg-cyan-500 [&::-moz-progress-bar]:bg-cyan-500"
+                                                    }`}
+                                                    max={100}
+                                                    value={levelWidth}
+                                                    aria-label={`Nivel de audio de ${participant.displayName}`}
+                                                />
                                                 <p className="mt-2 text-xs text-slate-500">
                                                     {isSpeaking ? "Transmitiendo audio ahora" : "Audio estable"}
                                                 </p>
