@@ -345,10 +345,13 @@ function InterviewPageContent() {
     const [isHost, setIsHost] = React.useState(false);
     const [runningAction, setRunningAction] = React.useState<GroupInterviewAction | null>(null);
     const [isRecording, setIsRecording] = React.useState(false);
+    const [isSubmitting, setIsSubmitting] = React.useState(false);
     const [recordingCountdown, setRecordingCountdown] = React.useState<number | null>(null);
+    const [transcription, setTranscription] = React.useState<string | null>(null);
     const [evaluationResult, setEvaluationResult] = React.useState<EvaluationResult | null>(null);
     const [evaluationId, setEvaluationId] = React.useState<string | null>(null);
     const [isEvaluating, setIsEvaluating] = React.useState(false);
+    const [submissionError, setSubmissionError] = React.useState<string | null>(null);
 
     const socketRef = React.useRef<WebSocket | null>(null);
     const localStreamRef = React.useRef<MediaStream | null>(null);
@@ -380,6 +383,8 @@ function InterviewPageContent() {
     const countdownIntervalRef = React.useRef<number | null>(null);
     const startRecordingFnRef = React.useRef<(() => void) | null>(null);
     const stopSubmitFnRef = React.useRef<(() => void) | null>(null);
+    const recordingDurationTimerRef = React.useRef<number | null>(null);
+    const recordingElapsedIntervalRef = React.useRef<number | null>(null);
 
     const {
         ttsStatus,
@@ -1607,31 +1612,38 @@ function InterviewPageContent() {
         if (!recorder || recorder.state === "inactive") return;
         recorder.onstop = async () => {
             const roundId = activeRoundIdRef.current;
-            if (!roundId) return;
             const blob = new Blob(answerChunksRef.current, { type: recorder.mimeType });
-            const wavBlob = await convertBlobToWav(blob);
-            const token = getAccessToken();
-            if (!token) return;
-            try {
-                setIsEvaluating(true);
-                const fd = new FormData();
-                fd.append("audio", wavBlob, "answer.wav");
-                const res = await fetch(
-                    `${backendHttpOriginRef.current ?? ""}/api/evaluation/submit/${roundId}`,
-                    { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: fd }
-                );
-                if (!res.ok) throw new Error("submit failed");
-                const data = (await res.json()) as { evaluation_id: string };
-                setEvaluationId(data.evaluation_id);
-            } catch {
-                setIsEvaluating(false);
-            }
             answerRecorderRef.current = null;
             answerChunksRef.current = [];
             setIsRecording(false);
+            if (!roundId) return;
+            const wavBlob = await convertBlobToWav(blob);
+            const token = getAccessToken();
+            if (!token) return;
+            setSubmissionError(null);
+            setIsSubmitting(true);
+            try {
+                const fd = new FormData();
+                fd.append("round_id", roundId);
+                fd.append("audio_file", wavBlob, "answer.wav");
+                const res = await fetch(
+                    `${backendHttpOriginRef.current ?? ""}/api/group-sessions/${encodeURIComponent(roomId)}/answers/audio`,
+                    { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: fd }
+                );
+                if (!res.ok) throw new Error(`Error ${res.status}: ${res.statusText}`);
+                const data = (await res.json()) as { evaluation_id: string; transcription: string };
+                if (!data.evaluation_id) throw new Error("El backend no retornó evaluation_id");
+                setTranscription(data.transcription ?? null);
+                setEvaluationId(data.evaluation_id);
+                setIsEvaluating(true);
+            } catch (err) {
+                setSubmissionError(err instanceof Error ? err.message : "Error al enviar audio");
+            } finally {
+                setIsSubmitting(false);
+            }
         };
         recorder.stop();
-    }, []);
+    }, [roomId]);
 
     React.useEffect(() => {
         if (!evaluationId || !isEvaluating) return;
@@ -1641,7 +1653,7 @@ function InterviewPageContent() {
         const poll = async () => {
             try {
                 const res = await fetch(
-                    `${backendHttpOriginRef.current ?? ""}/api/evaluation/${evaluationId}`,
+                    `${backendHttpOriginRef.current ?? ""}/evaluations/evaluation/${evaluationId}`,
                     { headers: { Authorization: `Bearer ${token}` } }
                 );
                 if (!res.ok) return;
@@ -1668,11 +1680,14 @@ function InterviewPageContent() {
     }, [startAnswerRecording, stopAndSubmitAnswer]);
 
     React.useEffect(() => {
+        setIsRecording(false);
+        setIsSubmitting(false);
+        setRecordingCountdown(null);
+        setSubmissionError(null);
+        setTranscription(null);
         setEvaluationResult(null);
         setEvaluationId(null);
         setIsEvaluating(false);
-        setIsRecording(false);
-        setRecordingCountdown(null);
     }, [activeRoundId]);
 
     React.useEffect(() => {
@@ -2035,17 +2050,23 @@ function InterviewPageContent() {
                                         Detener y enviar
                                     </Button>
                                 </div>
-                                {isEvaluating && (
+                                {isSubmitting && (
+                                    <p className="mt-3 text-sm text-rose-600">Enviando audio…</p>
+                                )}
+                                {isEvaluating && !isSubmitting && (
                                     <p className="mt-3 text-sm text-rose-600">Evaluando respuesta…</p>
                                 )}
+                                {submissionError && (
+                                    <p className="mt-3 text-sm font-medium text-red-600">Error: {submissionError}</p>
+                                )}
+                                {transcription && (
+                                    <div className="mt-3 rounded-xl border border-rose-200 bg-white p-3">
+                                        <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">Tu respuesta</p>
+                                        <p className="mt-0.5 text-sm text-rose-800 italic">"{transcription}"</p>
+                                    </div>
+                                )}
                                 {evaluationResult && (
-                                    <div className="mt-3 rounded-xl border border-rose-300 bg-white p-3 space-y-2">
-                                        {evaluationResult.transcription && (
-                                            <div>
-                                                <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">Transcripción</p>
-                                                <p className="mt-0.5 text-sm text-rose-800 italic">"{evaluationResult.transcription}"</p>
-                                            </div>
-                                        )}
+                                    <div className="mt-2 rounded-xl border border-rose-300 bg-white p-3 space-y-2">
                                         <p className="text-sm font-semibold text-rose-800">
                                             Puntuación: {evaluationResult.score ?? "—"}
                                         </p>

@@ -280,20 +280,20 @@ function OnboardingContent() {
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
 
-      <div className="min-h-screen bg-gradient-to-b from-blue-50 via-white to-gray-50">
+      <div className="min-h-screen bg-gradient-to-b from-blue-50 via-white to-slate-50">
         <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
           <div className="mb-8">
-            <h1 className="text-3xl md:text-4xl font-bold text-gray-900">Crea tu perfil profesional</h1>
-            <p className="text-gray-600 mt-3 max-w-2xl">
+            <h1 className="text-3xl md:text-4xl font-bold text-slate-900">Crea tu perfil profesional</h1>
+            <p className="text-slate-600 mt-3 max-w-2xl">
               Completa estos pasos para personalizar tu experiencia. Si prefieres, puedes omitirlo y terminarlo después.
             </p>
           </div>
 
           {isLoading && (
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
               <div className="flex items-center justify-center">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mr-3" />
-                <p className="text-gray-600">Cargando datos del perfil...</p>
+                <p className="text-slate-600">Cargando datos del perfil...</p>
               </div>
             </div>
           )}
@@ -318,8 +318,8 @@ function OnboardingContent() {
             <div className="bg-white rounded-2xl shadow-sm border border-blue-200 p-6 md:p-8">
               <div className="mb-6 flex flex-col md:flex-row md:items-start md:justify-between gap-4">
                 <div>
-                  <h2 className="text-2xl font-bold text-gray-900">Paso {currentStep + 1} de {ONBOARDING_STEPS.length}</h2>
-                  <p className="text-gray-600 mt-2">{STEP_LABELS[currentStepKey]}</p>
+                  <h2 className="text-2xl font-bold text-slate-900">Paso {currentStep + 1} de {ONBOARDING_STEPS.length}</h2>
+                  <p className="text-slate-600 mt-2">{STEP_LABELS[currentStepKey]}</p>
                 </div>
                 <Button type="button" variant="outline" onClick={handleSkip}>
                   Omitir por ahora
@@ -342,7 +342,7 @@ function OnboardingContent() {
                           ? "bg-blue-600 text-white border-blue-600"
                           : index < currentStep
                           ? "bg-blue-50 text-blue-700 border-blue-200"
-                          : "bg-gray-50 text-gray-500 border-gray-200"
+                          : "bg-slate-50 text-slate-500 border-slate-200"
                       }`}
                     >
                       {icon}
@@ -398,7 +398,7 @@ function OnboardingContent() {
                         value={personalData.nivelIngles}
                         onChange={(e) => setPersonalData((prev) => ({ ...prev, nivelIngles: e.target.value }))}
                         aria-label="Seleccionar nivel de inglés"
-                        className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all focus:outline-none focus:ring-2 focus:ring-blue-600/20"
                       >
                         <option value="">Seleccionar nivel</option>
                         <option value="Basico">Básico</option>
@@ -435,7 +435,7 @@ function OnboardingContent() {
                         onChange={(e) => setPersonalData((prev) => ({ ...prev, bio: e.target.value }))}
                         placeholder="Cuéntanos brevemente sobre ti"
                         aria-label="Descripción personal"
-                        className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all focus:outline-none focus:ring-2 focus:ring-blue-600/20"
                         rows={4}
                       />
                     </div>
@@ -444,7 +444,7 @@ function OnboardingContent() {
 
                 {currentStepKey === "experience" && (
                   <div className="space-y-4">
-                    <p className="text-sm text-gray-600">Puedes dejar este paso vacío y completarlo después.</p>
+                    <p className="text-sm text-slate-600">Puedes dejar este paso vacío y completarlo después.</p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <Label htmlFor="expCargo">Cargo</Label>
@@ -499,9 +499,9 @@ function OnboardingContent() {
                                 fechaFin: e.target.checked ? null : prev.fechaFin,
                               }))
                             }
-                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                            className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-2 focus:ring-blue-600/20"
                           />
-                          <span className="text-sm text-gray-700">Trabajo actual</span>
+                          <span className="text-sm text-slate-700">Trabajo actual</span>
                         </label>
                       </div>
                       <div>
@@ -522,7 +522,7 @@ function OnboardingContent() {
                           onChange={(e) => setExperienceData((prev) => ({ ...prev, descripcion: e.target.value }))}
                           placeholder="Describe brevemente tus responsabilidades o logros"
                           aria-label="Descripción de experiencia"
-                          className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all focus:outline-none focus:ring-2 focus:ring-blue-600/20"
                           rows={3}
                         />
                       </div>
@@ -532,7 +532,7 @@ function OnboardingContent() {
 
                 {currentStepKey === "skills" && (
                   <div className="space-y-4">
-                    <p className="text-sm text-gray-600">Agrega una habilidad inicial o continúa sin completarla aún.</p>
+                    <p className="text-sm text-slate-600">Agrega una habilidad inicial o continúa sin completarla aún.</p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <Label htmlFor="skillNombre">Habilidad</Label>
@@ -551,7 +551,7 @@ function OnboardingContent() {
                           value={skillData.tipo}
                           onChange={(e) => setSkillData((prev) => ({ ...prev, tipo: e.target.value as Skill["tipo"] }))}
                           aria-label="Seleccionar tipo de habilidad"
-                          className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all focus:outline-none focus:ring-2 focus:ring-blue-600/20"
                         >
                           <option value="tecnica">Técnica</option>
                           <option value="blanda">Blanda</option>
@@ -564,7 +564,7 @@ function OnboardingContent() {
                           value={skillData.nivel}
                           onChange={(e) => setSkillData((prev) => ({ ...prev, nivel: e.target.value as Skill["nivel"] }))}
                           aria-label="Seleccionar nivel de habilidad"
-                          className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all focus:outline-none focus:ring-2 focus:ring-blue-600/20"
                         >
                           <option value="Basico">Básico</option>
                           <option value="Intermedio">Intermedio</option>
@@ -579,7 +579,7 @@ function OnboardingContent() {
                           onChange={(e) => setSkillData((prev) => ({ ...prev, descripcion: e.target.value }))}
                           placeholder="Agrega una descripción opcional de la habilidad"
                           aria-label="Descripción de habilidad"
-                          className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all focus:outline-none focus:ring-2 focus:ring-blue-600/20"
                           rows={3}
                         />
                       </div>
@@ -589,7 +589,7 @@ function OnboardingContent() {
 
                 {currentStepKey === "preferences" && (
                   <div className="space-y-4">
-                    <p className="text-sm text-gray-600">Último paso. Puedes completarlo ahora o volver más adelante.</p>
+                    <p className="text-sm text-slate-600">Último paso. Puedes completarlo ahora o volver más adelante.</p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <Label htmlFor="prefCargo">Cargo deseado</Label>
@@ -640,7 +640,7 @@ function OnboardingContent() {
                           value={preferencesData.tipoContrato}
                           onChange={(e) => setPreferencesData((prev) => ({ ...prev, tipoContrato: e.target.value }))}
                           aria-label="Seleccionar tipo de contrato"
-                          className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all focus:outline-none focus:ring-2 focus:ring-blue-600/20"
                         >
                           <option value="">Seleccionar...</option>
                           <option value="Tiempo completo">Tiempo completo</option>
@@ -658,9 +658,9 @@ function OnboardingContent() {
                             onChange={(e) =>
                               setPreferencesData((prev) => ({ ...prev, disponibilidadInmediata: e.target.checked }))
                             }
-                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                            className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-2 focus:ring-blue-600/20"
                           />
-                          <span className="text-sm text-gray-700">Disponibilidad inmediata</span>
+                          <span className="text-sm text-slate-700">Disponibilidad inmediata</span>
                         </label>
                       </div>
                     </div>

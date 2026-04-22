@@ -61,13 +61,13 @@ export function PreferencesModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-6 border-b border-gray-200 sticky top-0 bg-white">
-          <h2 className="text-xl font-semibold text-gray-900">Editar Preferencias Laborales</h2>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="mx-4 max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-xl">
+        <div className="sticky top-0 flex items-center justify-between border-b border-slate-200 bg-white p-6">
+          <h2 className="text-xl font-semibold text-slate-900">Editar Preferencias Laborales</h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600"
+            className="text-slate-400 transition-colors hover:text-slate-600"
             aria-label="Cerrar modal"
           >
             <X className="w-5 h-5" />
@@ -139,7 +139,7 @@ export function PreferencesModal({
                 value={formData.tipoContrato || ''}
                 onChange={(e) => setFormData({ ...formData, tipoContrato: e.target.value })}
                 aria-label="Tipo de contrato"
-                className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all focus:outline-none focus:ring-2 focus:ring-blue-600/20"
               >
                 <option value="">Seleccionar...</option>
                 <option value="Tiempo completo">Tiempo completo</option>
@@ -158,9 +158,9 @@ export function PreferencesModal({
                   onChange={(e) =>
                     setFormData({ ...formData, disponibilidadInmediata: e.target.checked })
                   }
-                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-2 focus:ring-blue-600/20"
                 />
-                <span className="text-sm font-medium text-gray-700">
+                <span className="text-sm font-medium text-slate-700">
                   Disponibilidad inmediata
                 </span>
               </label>
