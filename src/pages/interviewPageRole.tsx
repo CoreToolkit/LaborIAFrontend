@@ -9,6 +9,7 @@ import {
     LogOut,
     Plug,
     Radio,
+    Square,
     Users,
     UserRound,
 } from "lucide-react";
@@ -35,6 +36,31 @@ type SignalingMessage = {
     from?: string;
     user_id?: string;
     displayName?: string;
+    round_id?: string;
+    round_index?: number;
+    question_text?: string;
+    target_skill?: string;
+    evaluation_id?: string;
+};
+
+type ActiveRound = {
+    roundId: string;
+    roundIndex: number;
+    questionText: string;
+    targetSkill: string | null;
+};
+
+type EvaluationResult = {
+    evaluation_id: string;
+    status: string;
+    score: number | null;
+    feedback: string | null;
+    score_breakdown: {
+        correctness: number;
+        completeness: number;
+        clarity: number;
+        examples: number;
+    } | null;
 };
 
 type GroupSessionResponse = {
@@ -68,6 +94,52 @@ type SenderPlayer = {
     isRemoving: boolean;
     appendErrorCount: number;
 };
+
+function writeString(view: DataView, offset: number, value: string) {
+    for (let i = 0; i < value.length; i++) {
+        view.setUint8(offset + i, value.charCodeAt(i));
+    }
+}
+
+function audioBufferToWav(buffer: AudioBuffer): ArrayBuffer {
+    const numChannels = buffer.numberOfChannels;
+    const sampleRate = buffer.sampleRate;
+    const dataSize = buffer.length * numChannels * 2;
+    const arrayBuffer = new ArrayBuffer(44 + dataSize);
+    const view = new DataView(arrayBuffer);
+
+    writeString(view, 0, "RIFF");
+    view.setUint32(4, 36 + dataSize, true);
+    writeString(view, 8, "WAVE");
+    writeString(view, 12, "fmt ");
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, numChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * numChannels * 2, true);
+    view.setUint16(32, numChannels * 2, true);
+    view.setUint16(34, 16, true);
+    writeString(view, 36, "data");
+    view.setUint32(40, dataSize, true);
+
+    let offset = 44;
+    for (let i = 0; i < buffer.length; i++) {
+        for (let ch = 0; ch < numChannels; ch++) {
+            const sample = Math.max(-1, Math.min(1, buffer.getChannelData(ch)[i]));
+            view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+            offset += 2;
+        }
+    }
+    return arrayBuffer;
+}
+
+async function convertBlobToWav(blob: Blob): Promise<Blob> {
+    const arrayBuffer = await blob.arrayBuffer();
+    const audioContext = new AudioContext();
+    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    await audioContext.close();
+    return new Blob([audioBufferToWav(audioBuffer)], { type: "audio/wav" });
+}
 
 const resolveBackendHttpOrigin = (): string => {
     if (BACKEND_API_BASE) {
@@ -150,10 +222,22 @@ function InterviewPageContent() {
     const [localLevel, setLocalLevel] = React.useState(0);
     const [connectionStatus, setConnectionStatus] = React.useState<"disconnected" | "connecting" | "connected">("disconnected");
     const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
+    const [activeRound, setActiveRound] = React.useState<ActiveRound | null>(null);
+    const [isRecording, setIsRecording] = React.useState(false);
+    const [isSubmittingAudio, setIsSubmittingAudio] = React.useState(false);
+    const [transcription, setTranscription] = React.useState<string | null>(null);
+    const [evaluationId, setEvaluationId] = React.useState<string | null>(null);
+    const [evaluation, setEvaluation] = React.useState<EvaluationResult | null>(null);
+    const [isHost, setIsHost] = React.useState(false);
+    const [sessionStatus, setSessionStatus] = React.useState<string | null>(null);
+    const [isGeneratingRound, setIsGeneratingRound] = React.useState(false);
+    const [recordingCountdown, setRecordingCountdown] = React.useState<number | null>(null);
 
     const socketRef = React.useRef<WebSocket | null>(null);
     const localStreamRef = React.useRef<MediaStream | null>(null);
     const mediaRecorderRef = React.useRef<MediaRecorder | null>(null);
+    const answerRecorderRef = React.useRef<MediaRecorder | null>(null);
+    const answerChunksRef = React.useRef<Blob[]>([]);
     const selectedMimeTypeRef = React.useRef("");
     const selfIdRef = React.useRef("");
     const lastRecorderRestartAtRef = React.useRef(0);
@@ -163,6 +247,10 @@ function InterviewPageContent() {
     const senderPlayersRef = React.useRef<Map<string, SenderPlayer>>(new Map());
     const remoteLevelResetTimeoutsRef = React.useRef<Map<string, number>>(new Map());
     const backendHttpOriginRef = React.useRef(resolveBackendHttpOrigin());
+    const autoRecordTimerRef = React.useRef<number | null>(null);
+    const countdownIntervalRef = React.useRef<number | null>(null);
+    const startRecordingFnRef = React.useRef<(() => void) | null>(null);
+    const stopSubmitFnRef = React.useRef<(() => Promise<void>) | null>(null);
 
     const unlockPlayback = React.useCallback(async () => {
         try {
@@ -636,6 +724,14 @@ function InterviewPageContent() {
         setParticipants([]);
         setLocalLevel(0);
         setIsMuted(false);
+        setActiveRound(null);
+        setIsRecording(false);
+        setTranscription(null);
+        setEvaluation(null);
+        setEvaluationId(null);
+        setIsHost(false);
+        setSessionStatus(null);
+        setIsGeneratingRound(false);
 
         selfIdRef.current = "";
 
@@ -650,6 +746,23 @@ function InterviewPageContent() {
             });
             resyncTimersRef.current = [];
         }
+
+        const answerRecorder = answerRecorderRef.current;
+        if (answerRecorder && answerRecorder.state !== "inactive") {
+            try { answerRecorder.stop(); } catch { /* ignore */ }
+        }
+        answerRecorderRef.current = null;
+        answerChunksRef.current = [];
+
+        if (autoRecordTimerRef.current !== null) {
+            window.clearTimeout(autoRecordTimerRef.current);
+            autoRecordTimerRef.current = null;
+        }
+        if (countdownIntervalRef.current !== null) {
+            window.clearInterval(countdownIntervalRef.current);
+            countdownIntervalRef.current = null;
+        }
+        setRecordingCountdown(null);
 
         stopRecorder();
 
@@ -719,6 +832,16 @@ function InterviewPageContent() {
 
             const resolvedUserId = await getCurrentUserId(headers);
             const resolvedSessionCode = await ensureSessionCode(headers, safeRoomId, roleId);
+
+            const sessionRes = await fetch(
+                `${backendHttpOriginRef.current}/api/group-sessions/${encodeURIComponent(resolvedSessionCode)}`,
+                { headers },
+            );
+            if (sessionRes.ok) {
+                const sessionData = await sessionRes.json() as { host_id: number; status: string };
+                setIsHost(sessionData.host_id === resolvedUserId);
+                setSessionStatus(sessionData.status);
+            }
 
             const localStream = await navigator.mediaDevices.getUserMedia({
                 audio: {
@@ -837,6 +960,35 @@ function InterviewPageContent() {
                     return;
                 }
 
+                // ── Eventos del servidor (sin remitente peer) ──────────────────
+                if (payload.event === "question_generated") {
+                    setActiveRound({
+                        roundId: payload.round_id ?? "",
+                        roundIndex: payload.round_index ?? 0,
+                        questionText: payload.question_text ?? "",
+                        targetSkill: payload.target_skill ?? null,
+                    });
+                    setTranscription(null);
+                    setEvaluation(null);
+                    setEvaluationId(null);
+                    return;
+                }
+
+                if (payload.event === "interview_started") {
+                    setSessionStatus("in_progress");
+                    return;
+                }
+
+                if (payload.event === "interview_closed") {
+                    setSessionStatus("closed");
+                    return;
+                }
+
+                if (payload.event === "round_started" || payload.event === "answer_transcribed") {
+                    return;
+                }
+
+                // ── Eventos peer (filtrar self) ─────────────────────────────────
                 const senderId = payload.from || payload.user_id || "";
                 if (!senderId || senderId === sessionUserId) {
                     return;
@@ -900,24 +1052,240 @@ function InterviewPageContent() {
         }
     };
 
+    const generateNextRound = React.useCallback(async () => {
+        const headers = getAuthHeaders();
+        if (!headers || !roomId) return;
+
+        setIsGeneratingRound(true);
+        setErrorMessage(null);
+        try {
+            if (sessionStatus === "waiting") {
+                const startRes = await fetch(
+                    `${backendHttpOriginRef.current}/api/group-sessions/${roomId}/start`,
+                    { method: "POST", headers },
+                );
+                if (!startRes.ok) {
+                    const err = await startRes.json().catch(() => ({})) as { detail?: string };
+                    throw new Error(err.detail ?? "No se pudo iniciar la sesión.");
+                }
+                setSessionStatus("in_progress");
+            }
+
+            const roundRes = await fetch(
+                `${backendHttpOriginRef.current}/api/group-sessions/${roomId}/rounds/next`,
+                {
+                    method: "POST",
+                    headers,
+                    body: JSON.stringify({ target_skill: null, difficulty: null }),
+                },
+            );
+            if (!roundRes.ok) {
+                const err = await roundRes.json().catch(() => ({})) as { detail?: string };
+                throw new Error(err.detail ?? "No se pudo generar la pregunta.");
+            }
+        } catch (error) {
+            const msg = error instanceof Error ? error.message : "Error generando la pregunta.";
+            setErrorMessage(msg);
+        } finally {
+            setIsGeneratingRound(false);
+        }
+    }, [getAuthHeaders, roomId, sessionStatus]);
+
+    const startAnswerRecording = React.useCallback(() => {
+        const stream = localStreamRef.current;
+        if (!stream || !isJoined) return;
+
+        answerChunksRef.current = [];
+        const mimeType = selectedMimeTypeRef.current || "";
+
+        try {
+            const recorder = mimeType
+                ? new MediaRecorder(stream, { mimeType })
+                : new MediaRecorder(stream);
+
+            recorder.ondataavailable = (e) => {
+                if (e.data.size > 0) answerChunksRef.current.push(e.data);
+            };
+
+            answerRecorderRef.current = recorder;
+            recorder.start(250);
+            setIsRecording(true);
+        } catch {
+            setErrorMessage("No se pudo iniciar la grabación de respuesta.");
+        }
+    }, [isJoined]);
+
+    const stopAndSubmitAnswer = React.useCallback(async () => {
+        if (autoRecordTimerRef.current !== null) {
+            window.clearTimeout(autoRecordTimerRef.current);
+            autoRecordTimerRef.current = null;
+        }
+        if (countdownIntervalRef.current !== null) {
+            window.clearInterval(countdownIntervalRef.current);
+            countdownIntervalRef.current = null;
+        }
+        setRecordingCountdown(null);
+
+        const recorder = answerRecorderRef.current;
+        if (!recorder || recorder.state === "inactive") {
+            setIsRecording(false);
+            return;
+        }
+
+        await new Promise<void>((resolve) => {
+            recorder.onstop = () => resolve();
+            recorder.stop();
+        });
+
+        setIsRecording(false);
+        answerRecorderRef.current = null;
+
+        const chunks = answerChunksRef.current;
+        if (!chunks.length || !activeRound) return;
+
+        const mimeType = selectedMimeTypeRef.current || "audio/webm";
+        const rawBlob = new Blob(chunks, { type: mimeType });
+        const blob = await convertBlobToWav(rawBlob).catch(() => rawBlob);
+        const ext = blob.type === "audio/wav" ? "wav" : (mimeType.split("/")[1]?.split(";")[0] ?? "webm");
+
+        setIsSubmittingAudio(true);
+        setTranscription(null);
+        setEvaluation(null);
+        setEvaluationId(null);
+
+        try {
+            const token = getAccessToken();
+            const formData = new FormData();
+            formData.append("audio_file", blob, `answer.${ext}`);
+            formData.append("round_id", activeRound.roundId);
+
+            const response = await fetch(
+                `${backendHttpOriginRef.current}/api/group-sessions/${roomId}/answers/audio`,
+                {
+                    method: "POST",
+                    headers: { Authorization: `Bearer ${token}` },
+                    body: formData,
+                },
+            );
+
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({})) as { detail?: string };
+                throw new Error(err.detail ?? "Error al enviar respuesta de audio.");
+            }
+
+            const data = await response.json() as { transcription: string; evaluation_id: string };
+            setTranscription(data.transcription);
+            setEvaluationId(data.evaluation_id);
+        } catch (error) {
+            const msg = error instanceof Error ? error.message : "Error al enviar respuesta de audio.";
+            setErrorMessage(msg);
+        } finally {
+            setIsSubmittingAudio(false);
+        }
+    }, [activeRound, roomId]);
+
+    React.useEffect(() => {
+        if (!evaluationId) return;
+
+        const token = getAccessToken();
+        const backendOrigin = backendHttpOriginRef.current;
+
+        const intervalId = window.setInterval(async () => {
+            try {
+                const res = await fetch(
+                    `${backendOrigin}/evaluations/evaluation/${evaluationId}`,
+                    { headers: { Authorization: `Bearer ${token}` } },
+                );
+                if (!res.ok) return;
+                const data = await res.json() as EvaluationResult;
+                if (data.status !== "pending") {
+                    setEvaluation(data);
+                    window.clearInterval(intervalId);
+                }
+            } catch {
+                // ignore polling errors
+            }
+        }, 2000);
+
+        return () => window.clearInterval(intervalId);
+    }, [evaluationId]);
+
+    React.useEffect(() => {
+        startRecordingFnRef.current = startAnswerRecording;
+        stopSubmitFnRef.current = stopAndSubmitAnswer;
+    }, [startAnswerRecording, stopAndSubmitAnswer]);
+
+    React.useEffect(() => {
+        if (!activeRound?.roundId || !isJoined) return;
+
+        if (autoRecordTimerRef.current !== null) {
+            window.clearTimeout(autoRecordTimerRef.current);
+            autoRecordTimerRef.current = null;
+        }
+        if (countdownIntervalRef.current !== null) {
+            window.clearInterval(countdownIntervalRef.current);
+            countdownIntervalRef.current = null;
+        }
+
+        startRecordingFnRef.current?.();
+        setRecordingCountdown(5);
+
+        countdownIntervalRef.current = window.setInterval(() => {
+            setRecordingCountdown((prev) => {
+                if (prev === null || prev <= 1) {
+                    if (countdownIntervalRef.current !== null) {
+                        window.clearInterval(countdownIntervalRef.current);
+                        countdownIntervalRef.current = null;
+                    }
+                    return null;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+
+        autoRecordTimerRef.current = window.setTimeout(() => {
+            void stopSubmitFnRef.current?.();
+            autoRecordTimerRef.current = null;
+        }, 5000);
+
+        return () => {
+            if (autoRecordTimerRef.current !== null) {
+                window.clearTimeout(autoRecordTimerRef.current);
+                autoRecordTimerRef.current = null;
+            }
+            if (countdownIntervalRef.current !== null) {
+                window.clearInterval(countdownIntervalRef.current);
+                countdownIntervalRef.current = null;
+            }
+        };
+    }, [activeRound?.roundId, isJoined]);
+
     const localName = displayName.trim() || "Tu usuario";
     const activeRemoteCount = participants.length;
     const accessToken = typeof window !== "undefined" ? getAccessToken() : null;
     const activeQuestion = React.useMemo<AudioPlayerQuestion>(() => {
+        if (activeRound?.questionText) {
+            return {
+                id: `round-${activeRound.roundId}`,
+                text: activeRound.questionText,
+                note: `Ronda ${activeRound.roundIndex}${activeRound.targetSkill ? ` · ${activeRound.targetSkill}` : ""}`,
+            };
+        }
+
         if (roleId) {
             return {
                 id: `intro-${roleId}`,
                 text: `Presentate y resume por que tu experiencia encaja con el rol ${roleId}.`,
-                note: "Pregunta activa temporal derivada del role_id actual.",
+                note: "Pregunta de introducción",
             };
         }
 
         return {
             id: "intro-general",
             text: "Presentate y resume brevemente la experiencia mas relevante que aportarias en esta entrevista.",
-            note: "Pregunta activa temporal mientras se define el flujo real de preguntas.",
+            note: "Pregunta general de introducción",
         };
-    }, [roleId]);
+    }, [activeRound, roleId]);
 
     return (
         <>
@@ -1034,6 +1402,21 @@ function InterviewPageContent() {
                                 {isMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
                                 {isMuted ? "Activar microfono" : "Silenciar microfono"}
                             </Button>
+                            {isJoined && isHost && sessionStatus !== "closed" && (
+                                <Button
+                                    type="button"
+                                    onClick={() => void generateNextRound()}
+                                    disabled={isGeneratingRound}
+                                    className="gap-2 bg-cyan-600 hover:bg-cyan-700"
+                                >
+                                    <AudioLines className="h-4 w-4" />
+                                    {isGeneratingRound
+                                        ? "Generando..."
+                                        : activeRound
+                                        ? "Siguiente pregunta"
+                                        : "Iniciar entrevista"}
+                                </Button>
+                            )}
                             <span className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-medium text-cyan-700">
                                 <Users className="mr-1 inline h-3.5 w-3.5" />
                                 Participantes remotos: {activeRemoteCount}
@@ -1044,6 +1427,87 @@ function InterviewPageContent() {
                     <section className="mb-6">
                         <AudioPlayer question={activeQuestion} authToken={accessToken} />
                     </section>
+
+                    {isJoined && activeRound && (
+                        <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                            <div className="mb-4">
+                                <span className="text-xs font-medium uppercase tracking-wide text-cyan-600">
+                                    Ronda {activeRound.roundIndex}{activeRound.targetSkill ? ` · ${activeRound.targetSkill}` : ""}
+                                </span>
+                                <p className="mt-1 text-sm font-medium text-slate-800">{activeRound.questionText}</p>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-3">
+                                {recordingCountdown !== null ? (
+                                    <>
+                                        <span className="inline-flex animate-pulse items-center gap-2 rounded-full bg-red-100 px-4 py-2 text-sm font-semibold text-red-700">
+                                            <Mic className="h-4 w-4" />
+                                            Grabando... {recordingCountdown}s
+                                        </span>
+                                        <Button
+                                            type="button"
+                                            onClick={() => void stopAndSubmitAnswer()}
+                                            className="gap-2 bg-slate-800 hover:bg-slate-900"
+                                        >
+                                            <Square className="h-4 w-4" />
+                                            Enviar ahora
+                                        </Button>
+                                    </>
+                                ) : isRecording ? (
+                                    <Button
+                                        type="button"
+                                        onClick={() => void stopAndSubmitAnswer()}
+                                        className="gap-2 animate-pulse bg-slate-800 hover:bg-slate-900"
+                                    >
+                                        <Square className="h-4 w-4" />
+                                        Detener y enviar
+                                    </Button>
+                                ) : null}
+                                {isSubmittingAudio && (
+                                    <span className="text-sm text-slate-500">Transcribiendo respuesta...</span>
+                                )}
+                            </div>
+
+                            {transcription && (
+                                <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                                    <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">Tu respuesta</p>
+                                    <p className="text-sm text-slate-800">{transcription}</p>
+                                </div>
+                            )}
+
+                            {evaluation && evaluation.status !== "pending" && (
+                                <div className={`mt-4 rounded-lg border p-4 ${
+                                    evaluation.score !== null && evaluation.score >= 70
+                                        ? "border-emerald-200 bg-emerald-50"
+                                        : evaluation.score !== null && evaluation.score >= 50
+                                        ? "border-yellow-200 bg-yellow-50"
+                                        : "border-red-200 bg-red-50"
+                                }`}>
+                                    <div className="mb-2 flex items-center justify-between">
+                                        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Evaluación automática</p>
+                                        {evaluation.score !== null && (
+                                            <span className={`text-sm font-bold ${
+                                                evaluation.score >= 70 ? "text-emerald-700" : evaluation.score >= 50 ? "text-yellow-700" : "text-red-700"
+                                            }`}>
+                                                {evaluation.score}/100
+                                            </span>
+                                        )}
+                                    </div>
+                                    {evaluation.feedback && (
+                                        <p className="whitespace-pre-line text-sm text-slate-700">{evaluation.feedback}</p>
+                                    )}
+                                    {evaluation.score_breakdown && (
+                                        <div className="mt-3 grid grid-cols-2 gap-1 text-xs text-slate-500">
+                                            <span>Correctitud: {evaluation.score_breakdown.correctness}</span>
+                                            <span>Completitud: {evaluation.score_breakdown.completeness}</span>
+                                            <span>Claridad: {evaluation.score_breakdown.clarity}</span>
+                                            <span>Ejemplos: {evaluation.score_breakdown.examples}</span>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </section>
+                    )}
 
                     <section className="grid grid-cols-1 gap-4 xl:grid-cols-3">
                         <article className="rounded-2xl border border-cyan-200 bg-cyan-50 p-4 xl:col-span-1">
