@@ -384,7 +384,8 @@ function InterviewPageContent() {
     const startRecordingFnRef = React.useRef<(() => void) | null>(null);
     const stopSubmitFnRef = React.useRef<(() => void) | null>(null);
     const recordingDurationTimerRef = React.useRef<number | null>(null);
-    const recordingElapsedIntervalRef = React.useRef<number | null>(null);
+
+    const answerStreamRef = React.useRef<MediaStream | null>(null);
 
     const {
         ttsStatus,
@@ -1043,6 +1044,14 @@ function InterviewPageContent() {
             window.clearInterval(countdownIntervalRef.current);
             countdownIntervalRef.current = null;
         }
+        if (recordingDurationTimerRef.current !== null) {
+            window.clearTimeout(recordingDurationTimerRef.current);
+            recordingDurationTimerRef.current = null;
+        }
+        if (answerStreamRef.current) {
+            answerStreamRef.current.getTracks().forEach(t => t.stop());
+            answerStreamRef.current = null;
+        }
 
         stopRecorder();
 
@@ -1593,28 +1602,46 @@ function InterviewPageContent() {
 
     const startAnswerRecording = React.useCallback(() => {
         if (!localStreamRef.current) return;
-        const stream = localStreamRef.current;
+        const clonedStream = localStreamRef.current.clone();
+        if (answerStreamRef.current) {
+            answerStreamRef.current.getTracks().forEach(t => t.stop());
+        }
+        answerStreamRef.current = clonedStream;
         const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
             ? "audio/webm;codecs=opus"
             : "audio/webm";
-        const recorder = new MediaRecorder(stream, { mimeType });
+        const recorder = new MediaRecorder(clonedStream, { mimeType });
         answerChunksRef.current = [];
         recorder.ondataavailable = (e) => {
-            if (e.data.size > 0) answerChunksRef.current.push(e.data);
+            if (e.data.size > 0) {
+                answerChunksRef.current.push(e.data);
+            }
         };
         recorder.start(250);
         answerRecorderRef.current = recorder;
         setIsRecording(true);
+        recordingDurationTimerRef.current = window.setTimeout(() => {
+            recordingDurationTimerRef.current = null;
+            stopSubmitFnRef.current?.();
+        }, 10000);
     }, []);
 
     const stopAndSubmitAnswer = React.useCallback(() => {
         const recorder = answerRecorderRef.current;
         if (!recorder || recorder.state === "inactive") return;
+        if (recordingDurationTimerRef.current !== null) {
+            window.clearTimeout(recordingDurationTimerRef.current);
+            recordingDurationTimerRef.current = null;
+        }
         recorder.onstop = async () => {
             const roundId = activeRoundIdRef.current;
             const blob = new Blob(answerChunksRef.current, { type: recorder.mimeType });
             answerRecorderRef.current = null;
             answerChunksRef.current = [];
+            if (answerStreamRef.current) {
+                answerStreamRef.current.getTracks().forEach(t => t.stop());
+                answerStreamRef.current = null;
+            }
             setIsRecording(false);
             if (!roundId) return;
             const wavBlob = await convertBlobToWav(blob);
@@ -1630,7 +1657,10 @@ function InterviewPageContent() {
                     `${backendHttpOriginRef.current ?? ""}/api/group-sessions/${encodeURIComponent(roomId)}/answers/audio`,
                     { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: fd }
                 );
-                if (!res.ok) throw new Error(`Error ${res.status}: ${res.statusText}`);
+                if (!res.ok) {
+                    if (res.status === 422) throw new Error("No se detectó voz en tu respuesta. Habla más cerca del micrófono e intenta de nuevo.");
+                    throw new Error(`Error ${res.status}: ${res.statusText}`);
+                }
                 const data = (await res.json()) as { evaluation_id: string; transcription: string };
                 if (!data.evaluation_id) throw new Error("El backend no retornó evaluation_id");
                 setTranscription(data.transcription ?? null);
@@ -1680,6 +1710,10 @@ function InterviewPageContent() {
     }, [startAnswerRecording, stopAndSubmitAnswer]);
 
     React.useEffect(() => {
+        if (recordingDurationTimerRef.current !== null) {
+            window.clearTimeout(recordingDurationTimerRef.current);
+            recordingDurationTimerRef.current = null;
+        }
         setIsRecording(false);
         setIsSubmitting(false);
         setRecordingCountdown(null);
