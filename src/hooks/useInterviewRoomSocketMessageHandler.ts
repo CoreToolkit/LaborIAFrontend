@@ -234,17 +234,41 @@ export function useInterviewRoomSocketMessageHandler({
 
     if (payload.event === "question_audio_ready") {
       const eventRoundId = (payload as QuestionAudioReadyPayload).round_id;
-      if (eventRoundId && eventRoundId === activeRoundIdRef.current) {
-        handleQuestionAudioReady(payload as QuestionAudioReadyPayload);
+      if (!eventRoundId) {
+        return;
       }
+
+      // If active round ref is temporarily null (race between ws burst and state sync),
+      // accept the first valid TTS payload and align refs/state to that round.
+      if (activeRoundIdRef.current && eventRoundId !== activeRoundIdRef.current) {
+        return;
+      }
+
+      if (!activeRoundIdRef.current) {
+        activeRoundIdRef.current = eventRoundId;
+        setActiveRoundId(eventRoundId);
+      }
+
+      handleQuestionAudioReady(payload as QuestionAudioReadyPayload);
       return;
     }
 
     if (payload.event === "tts_error") {
       const eventRoundId = (payload as TtsErrorPayload).round_id;
-      if (eventRoundId && eventRoundId === activeRoundIdRef.current) {
-        handleTtsError(payload as TtsErrorPayload);
+      if (!eventRoundId) {
+        return;
       }
+
+      if (activeRoundIdRef.current && eventRoundId !== activeRoundIdRef.current) {
+        return;
+      }
+
+      if (!activeRoundIdRef.current) {
+        activeRoundIdRef.current = eventRoundId;
+        setActiveRoundId(eventRoundId);
+      }
+
+      handleTtsError(payload as TtsErrorPayload);
       return;
     }
 
