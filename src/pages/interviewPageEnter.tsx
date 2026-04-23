@@ -20,27 +20,33 @@ import PrivateRoute from "@/components/PrivateRoute";
 import { getAccessToken } from "@/utils/session";
 import { getRoleDetail } from "@/services/matchingService";
 import {
-    applyGroupInterviewEvent,
+    ensureSessionCodeFromApi,
+    fetchSessionDetailFromApi,
+    getCurrentUserIdFromApi,
+    mapGroupInterviewActionError,
+    type GroupInterviewAction,
+} from "@/services/groupInterviewRoomService";
+import {
     buildRoundEventDedupKey,
-    extractGroupInterviewUiState,
-    type QuestionAudioReadyPayload,
-    type TtsErrorPayload,
 } from "@/utils/groupInterview";
 import { useTTSAudioPlayer } from "@/hooks/useTTSAudioPlayer";
+import { useGroupInterviewAnswerFlow } from "@/hooks/useGroupInterviewAnswerFlow";
+import { useInterviewRoomAudioParticipants } from "@/hooks/useInterviewRoomAudioParticipants";
+import { useInterviewRoomSocketMessageHandler } from "@/hooks/useInterviewRoomSocketMessageHandler";
+import { useInterviewRoomSessionSync } from "@/hooks/useInterviewRoomSessionSync";
+import { useInterviewRoomRejoin } from "@/hooks/useInterviewRoomRejoin";
+import { useInterviewRoomSocketLifecycle } from "@/hooks/useInterviewRoomSocketLifecycle";
+import {
+    clearPersistedRejoinState,
+    pickSupportedMimeType,
+    readPersistedRejoinState,
+    resolveBackendHttpOrigin,
+    resolveBackendWsBase,
+    wrapChunkWithClientHeader,
+} from "@/utils/interviewRoom";
 
 const BACKEND_WS_BASE = process.env.NEXT_PUBLIC_BACKEND_WS_BASE;
 const BACKEND_API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL;
-const CLIENT_MAGIC_A = 67; // 'C'
-const CLIENT_MAGIC_B = 65; // 'A'
-const MAX_QUEUE_PER_SENDER = 60;
-const GROUP_INTERVIEW_REJOIN_KEY = "laboria.groupInterview.rejoin";
-
-const MIME_CANDIDATES = [
-    "audio/webm;codecs=opus",
-    "audio/webm",
-    "audio/mp4",
-    "audio/ogg;codecs=opus",
-];
 
 type SignalingMessage = {
     event: string;
@@ -56,173 +62,6 @@ type SignalingMessage = {
     evaluation_id?: string;
 };
 
-type EvaluationResult = {
-    evaluation_id: string;
-    status: string;
-    score: number | null;
-    feedback: string | null;
-    transcription: string | null;
-    score_breakdown: {
-        correctness: number;
-        completeness: number;
-        clarity: number;
-        examples: number;
-    } | null;
-};
-
-type GroupSessionResponse = {
-    id: number;
-    session_code: string;
-};
-
-type GroupSessionDetailResponse = {
-    host_id: number;
-    status: string;
-};
-
-type AuthMeResponse = {
-    id: number;
-};
-
-type GroupInterviewAction = "start" | "next" | "close";
-
-type RemoteParticipant = {
-    socketId: string;
-    displayName: string;
-    connected: boolean;
-    level: number;
-};
-
-type UnwrappedIncomingAudio = {
-    mimeType: string | null;
-    audioBuffer: ArrayBuffer | null;
-};
-
-type SenderPlayer = {
-    audio: HTMLAudioElement;
-    mediaSource: MediaSource;
-    sourceBuffer: SourceBuffer | null;
-    queue: ArrayBuffer[];
-    mimeType: string;
-    sourceBufferReady: boolean;
-    isRemoving: boolean;
-    appendErrorCount: number;
-};
-
-function writeString(view: DataView, offset: number, value: string) {
-    for (let i = 0; i < value.length; i++) {
-        view.setUint8(offset + i, value.charCodeAt(i));
-    }
-}
-
-function audioBufferToWav(buffer: AudioBuffer): ArrayBuffer {
-    const numChannels = buffer.numberOfChannels;
-    const sampleRate = buffer.sampleRate;
-    const dataSize = buffer.length * numChannels * 2;
-    const arrayBuffer = new ArrayBuffer(44 + dataSize);
-    const view = new DataView(arrayBuffer);
-
-    writeString(view, 0, "RIFF");
-    view.setUint32(4, 36 + dataSize, true);
-    writeString(view, 8, "WAVE");
-    writeString(view, 12, "fmt ");
-    view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true);
-    view.setUint16(22, numChannels, true);
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, sampleRate * numChannels * 2, true);
-    view.setUint16(32, numChannels * 2, true);
-    view.setUint16(34, 16, true);
-    writeString(view, 36, "data");
-    view.setUint32(40, dataSize, true);
-
-    let offset = 44;
-    for (let i = 0; i < buffer.length; i++) {
-        for (let ch = 0; ch < numChannels; ch++) {
-            const sample = Math.max(-1, Math.min(1, buffer.getChannelData(ch)[i]));
-            view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
-            offset += 2;
-        }
-    }
-    return arrayBuffer;
-}
-
-async function convertBlobToWav(blob: Blob): Promise<Blob> {
-    const arrayBuffer = await blob.arrayBuffer();
-    const audioContext = new AudioContext();
-    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-    await audioContext.close();
-    return new Blob([audioBufferToWav(audioBuffer)], { type: "audio/wav" });
-}
-
-type PersistedRejoinState = {
-    roomId: string;
-    displayName: string;
-    userId: string;
-    roleId: string;
-};
-
-const readPersistedRejoinState = (): PersistedRejoinState | null => {
-    if (typeof window === "undefined") {
-        return null;
-    }
-
-    try {
-        const raw = window.sessionStorage.getItem(GROUP_INTERVIEW_REJOIN_KEY);
-
-        if (window.localStorage.getItem(GROUP_INTERVIEW_REJOIN_KEY)) {
-            window.localStorage.removeItem(GROUP_INTERVIEW_REJOIN_KEY);
-        }
-
-        if (!raw) {
-            return null;
-        }
-
-        const parsed = JSON.parse(raw) as Partial<PersistedRejoinState>;
-        if (
-            typeof parsed.roomId !== "string"
-            || typeof parsed.displayName !== "string"
-            || typeof parsed.userId !== "string"
-        ) {
-            return null;
-        }
-
-        return {
-            roomId: parsed.roomId,
-            displayName: parsed.displayName,
-            userId: parsed.userId,
-            roleId: typeof parsed.roleId === "string" ? parsed.roleId : "",
-        };
-    } catch {
-        return null;
-    }
-};
-
-const persistRejoinState = (state: PersistedRejoinState): void => {
-    if (typeof window === "undefined") {
-        return;
-    }
-
-    try {
-        window.sessionStorage.setItem(GROUP_INTERVIEW_REJOIN_KEY, JSON.stringify(state));
-    } catch {
-        return;
-    }
-};
-
-const clearPersistedRejoinState = (): void => {
-    if (typeof window === "undefined") {
-        return;
-    }
-
-    try {
-        window.sessionStorage.removeItem(GROUP_INTERVIEW_REJOIN_KEY);
-        window.localStorage.removeItem(GROUP_INTERVIEW_REJOIN_KEY);
-    } catch {
-        return;
-    }
-};
-
 type LeaveRoomOptions = {
     notifyServer?: boolean;
     clearPersistedRejoin?: boolean;
@@ -232,88 +71,6 @@ type JoinRoomOptions = {
     roomIdOverride?: string;
     displayNameOverride?: string;
     allowRejoinDuringInProgress?: boolean;
-};
-
-const resolveBackendHttpOrigin = (): string => {
-    if (BACKEND_API_BASE) {
-        return BACKEND_API_BASE.replace(/\/+$/, "");
-    }
-
-    if (!BACKEND_WS_BASE) {
-        return "";
-    }
-
-    const wsAsHttp = BACKEND_WS_BASE
-        .replace(/^wss:\/\//i, "https://")
-        .replace(/^ws:\/\//i, "http://")
-        .replace(/\/+$/, "");
-
-    return wsAsHttp.replace(/\/api\/ws$/i, "").replace(/\/ws$/i, "");
-};
-
-const resolveBackendWsBase = (): string => {
-    if (BACKEND_WS_BASE) {
-        return BACKEND_WS_BASE.replace(/\/+$/, "");
-    }
-
-    if (!BACKEND_API_BASE) {
-        return "";
-    }
-
-    const httpBase = BACKEND_API_BASE.replace(/\/+$/, "");
-    const wsBase = httpBase
-        .replace(/^https:\/\//i, "wss://")
-        .replace(/^http:\/\//i, "ws://");
-
-    return `${wsBase}/api/ws`;
-};
-
-const normalizeUserLabel = (name: string, socketId: string): string => {
-    const safeName = name.trim();
-    if (safeName) {
-        return safeName;
-    }
-
-    return `Usuario-${socketId.slice(0, 5)}`;
-};
-
-const pickSupportedMimeType = (): string => {
-    for (const candidate of MIME_CANDIDATES) {
-        if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(candidate)) {
-            return candidate;
-        }
-    }
-    return "";
-};
-
-const wrapChunkWithClientHeader = (audioBuffer: ArrayBuffer, mimeType: string): ArrayBuffer => {
-    const mimeBytes = new TextEncoder().encode(mimeType || "");
-    const audioBytes = new Uint8Array(audioBuffer);
-    const out = new Uint8Array(3 + mimeBytes.length + audioBytes.length);
-    out[0] = CLIENT_MAGIC_A;
-    out[1] = CLIENT_MAGIC_B;
-    out[2] = Math.min(255, mimeBytes.length);
-    out.set(mimeBytes.slice(0, 255), 3);
-    out.set(audioBytes, 3 + Math.min(255, mimeBytes.length));
-    return out.buffer;
-};
-
-const unwrapIncomingAudioPayload = (audioData: ArrayBuffer): UnwrappedIncomingAudio => {
-    const payload = new Uint8Array(audioData);
-    if (payload.length >= 3 && payload[0] === CLIENT_MAGIC_A && payload[1] === CLIENT_MAGIC_B) {
-        const mimeLen = payload[2];
-        if (payload.length <= 3 + mimeLen) {
-            return { mimeType: null, audioBuffer: null };
-        }
-
-        const mimeType = new TextDecoder().decode(payload.slice(3, 3 + mimeLen));
-        const audioBytes = payload.slice(3 + mimeLen);
-        const copy = new Uint8Array(audioBytes.length);
-        copy.set(audioBytes);
-        return { mimeType, audioBuffer: copy.buffer };
-    }
-
-    return { mimeType: null, audioBuffer: audioData.slice(0) };
 };
 
 function InterviewPageContent() {
@@ -328,11 +85,9 @@ function InterviewPageContent() {
     const [displayName, setDisplayName] = React.useState("");
     const [roomId, setRoomId] = React.useState("");
     const [selfId, setSelfId] = React.useState("");
-    const [participants, setParticipants] = React.useState<RemoteParticipant[]>([]);
     const [isJoined, setIsJoined] = React.useState(false);
     const [isConnecting, setIsConnecting] = React.useState(false);
     const [isMuted, setIsMuted] = React.useState(false);
-    const [localLevel, setLocalLevel] = React.useState(0);
     const [isSyncingState, setIsSyncingState] = React.useState(false);
     const [roleDisplayName, setRoleDisplayName] = React.useState<string | null>(roleNameFromQuery || null);
     const [connectionStatus, setConnectionStatus] = React.useState<"disconnected" | "connecting" | "connected">("disconnected");
@@ -344,14 +99,6 @@ function InterviewPageContent() {
     const [currentQuestion, setCurrentQuestion] = React.useState<AudioPlayerQuestion | null>(null);
     const [isHost, setIsHost] = React.useState(false);
     const [runningAction, setRunningAction] = React.useState<GroupInterviewAction | null>(null);
-    const [isRecording, setIsRecording] = React.useState(false);
-    const [isSubmitting, setIsSubmitting] = React.useState(false);
-    const [recordingCountdown, setRecordingCountdown] = React.useState<number | null>(null);
-    const [transcription, setTranscription] = React.useState<string | null>(null);
-    const [evaluationResult, setEvaluationResult] = React.useState<EvaluationResult | null>(null);
-    const [evaluationId, setEvaluationId] = React.useState<string | null>(null);
-    const [isEvaluating, setIsEvaluating] = React.useState(false);
-    const [submissionError, setSubmissionError] = React.useState<string | null>(null);
 
     const socketRef = React.useRef<WebSocket | null>(null);
     const localStreamRef = React.useRef<MediaStream | null>(null);
@@ -362,10 +109,8 @@ function InterviewPageContent() {
     const resyncTimersRef = React.useRef<number[]>([]);
     const localMonitorCleanupRef = React.useRef<(() => void) | null>(null);
 
-    const senderPlayersRef = React.useRef<Map<string, SenderPlayer>>(new Map());
-    const remoteLevelResetTimeoutsRef = React.useRef<Map<string, number>>(new Map());
-    const backendHttpOriginRef = React.useRef(resolveBackendHttpOrigin());
-    const backendWsBaseRef = React.useRef(resolveBackendWsBase());
+    const backendHttpOriginRef = React.useRef(resolveBackendHttpOrigin(BACKEND_API_BASE, BACKEND_WS_BASE));
+    const backendWsBaseRef = React.useRef(resolveBackendWsBase(BACKEND_API_BASE, BACKEND_WS_BASE));
     const processedRoundEventKeysRef = React.useRef<string[]>([]);
     const autoRejoinAttemptedRef = React.useRef(false);
 
@@ -375,15 +120,6 @@ function InterviewPageContent() {
     const sessionStatusRef = React.useRef<string>("idle");
     const totalRoundsRef = React.useRef<number>(0);
     const currentQuestionRef = React.useRef<AudioPlayerQuestion | null>(null);
-    const answerRecorderRef = React.useRef<MediaRecorder | null>(null);
-    const answerChunksRef = React.useRef<Blob[]>([]);
-    const autoRecordTimerRef = React.useRef<number | null>(null);
-    const countdownIntervalRef = React.useRef<number | null>(null);
-    const startRecordingFnRef = React.useRef<(() => void) | null>(null);
-    const stopSubmitFnRef = React.useRef<(() => void) | null>(null);
-    const recordingDurationTimerRef = React.useRef<number | null>(null);
-
-    const answerStreamRef = React.useRef<MediaStream | null>(null);
 
     const {
         ttsStatus,
@@ -392,6 +128,39 @@ function InterviewPageContent() {
         handleRoundStarted: handleTTSRoundStarted,
         cleanup: cleanupTTSAudio,
     } = useTTSAudioPlayer(activeRoundId);
+
+    const {
+        participants,
+        localLevel,
+        setLocalLevel,
+        updateParticipant,
+        removeParticipant,
+        markRemoteActivity,
+        startAudioLevelMonitor,
+        appendChunkForSender,
+        cleanupSenderPlayer,
+        clearParticipantsAndAudio,
+    } = useInterviewRoomAudioParticipants();
+
+    const {
+        isRecording,
+        isSubmitting,
+        recordingCountdown,
+        transcription,
+        evaluationResult,
+        isEvaluating,
+        submissionError,
+        startAnswerRecording,
+        stopAndSubmitAnswer,
+        resetForLeave: resetAnswerFlowForLeave,
+    } = useGroupInterviewAnswerFlow({
+        localStreamRef,
+        activeRoundIdRef,
+        backendHttpOriginRef,
+        roomId,
+        activeRoundId,
+        ttsStatus,
+    });
 
     // Las refs se actualizan directamente en el handler del WebSocket (mismo tick de JS),
     // no en useEffect. Esto elimina la ventana de carrera entre setActiveRoundId(...)
@@ -454,76 +223,12 @@ function InterviewPageContent() {
         };
     }, []);
 
-    const getCurrentUserId = React.useCallback(async (headers: HeadersInit): Promise<number> => {
-        const backendHttpOrigin = backendHttpOriginRef.current;
-        if (!backendHttpOrigin) {
-            throw new Error("No se encontró la URL del backend para auth/me.");
-        }
-
-        const response = await fetch(`${backendHttpOrigin}/auth/me`, {
-            method: "GET",
-            headers,
-        });
-
-        if (!response.ok) {
-            throw new Error("No se pudo validar el usuario actual. Inicia sesión de nuevo.");
-        }
-
-        const data = (await response.json()) as AuthMeResponse;
-        if (!data?.id || !Number.isFinite(data.id)) {
-            throw new Error("El backend no devolvió un user_id válido.");
-        }
-
-        return data.id;
+    const getCurrentUserId = React.useCallback((headers: HeadersInit): Promise<number> => {
+        return getCurrentUserIdFromApi(backendHttpOriginRef.current, headers);
     }, []);
 
-    const fetchSessionDetail = React.useCallback(async (headers: HeadersInit, sessionCode: string): Promise<GroupSessionDetailResponse> => {
-        const backendHttpOrigin = backendHttpOriginRef.current;
-        if (!backendHttpOrigin) {
-            throw new Error("No se encontró la URL del backend para obtener la sesión.");
-        }
-
-        const response = await fetch(
-            `${backendHttpOrigin}/api/group-sessions/${encodeURIComponent(sessionCode)}`,
-            {
-                method: "GET",
-                headers,
-            },
-        );
-
-        if (!response.ok) {
-            throw new Error("No se pudo obtener el detalle de la sesión grupal.");
-        }
-
-        return (await response.json()) as GroupSessionDetailResponse;
-    }, []);
-
-    const mapActionErrorMessage = React.useCallback((action: GroupInterviewAction, httpStatus: number) => {
-        if (httpStatus === 403) {
-            return "No autorizado: solo el host puede ejecutar esta acción.";
-        }
-
-        if (httpStatus === 404) {
-            return "No se encontró la sesión grupal solicitada.";
-        }
-
-        if (httpStatus === 409) {
-            if (action === "start") {
-                return "La sesión no está en estado waiting para iniciar.";
-            }
-
-            if (action === "next") {
-                return "No se puede crear otra ronda en el estado actual de la sesión.";
-            }
-
-            return "No se puede cerrar la sesión en el estado actual.";
-        }
-
-        if (httpStatus === 502 && action === "next") {
-            return "No se pudo generar la siguiente pregunta desde IA. Intenta nuevamente.";
-        }
-
-        return "No se pudo completar la acción solicitada.";
+    const fetchSessionDetail = React.useCallback((headers: HeadersInit, sessionCode: string) => {
+        return fetchSessionDetailFromApi(backendHttpOriginRef.current, headers, sessionCode);
     }, []);
 
     const executeHostAction = React.useCallback(async (action: GroupInterviewAction) => {
@@ -559,7 +264,7 @@ function InterviewPageContent() {
             });
 
             if (!response.ok) {
-                setErrorMessage(mapActionErrorMessage(action, response.status));
+                setErrorMessage(mapGroupInterviewActionError(action, response.status));
                 return;
             }
 
@@ -575,304 +280,19 @@ function InterviewPageContent() {
         } finally {
             setRunningAction(null);
         }
-    }, [getAuthHeaders, mapActionErrorMessage, roomId]);
+    }, [getAuthHeaders, roomId]);
 
     const ensureSessionCode = React.useCallback(
         async (headers: HeadersInit, desiredCode: string, roleId: string): Promise<string> => {
-            const backendHttpOrigin = backendHttpOriginRef.current;
-            if (!backendHttpOrigin) {
-                throw new Error("No se encontró la URL del backend para sesiones grupales.");
-            }
-
-            const trimmedCode = desiredCode.trim().toUpperCase();
-            if (trimmedCode) {
-                const checkResponse = await fetch(
-                    `${backendHttpOrigin}/api/group-sessions/${encodeURIComponent(trimmedCode)}`,
-                    {
-                        method: "GET",
-                        headers,
-                    },
-                );
-
-                if (!checkResponse.ok) {
-                    throw new Error("El Session Code no existe o no está disponible.");
-                }
-
-                return trimmedCode;
-            }
-
-            if (!roleId) {
-                throw new Error("No hay role_id para crear una sesión grupal nueva.");
-            }
-
-            const createResponse = await fetch(`${backendHttpOrigin}/api/group-sessions`, {
-                method: "POST",
+            return ensureSessionCodeFromApi({
+                backendHttpOrigin: backendHttpOriginRef.current,
                 headers,
-                body: JSON.stringify({
-                    role_id: roleId,
-                    difficulty: "intermediate",
-                }),
+                desiredCode,
+                roleId,
             });
-
-            if (!createResponse.ok) {
-                throw new Error("No se pudo crear la sesión grupal desde el backend.");
-            }
-
-            const created = (await createResponse.json()) as GroupSessionResponse;
-            if (!created?.session_code) {
-                throw new Error("El backend no devolvió un session_code válido.");
-            }
-
-            return created.session_code;
         },
         [],
     );
-
-    const updateParticipant = React.useCallback((socketId: string, updater: (current?: RemoteParticipant) => RemoteParticipant) => {
-        setParticipants((current) => {
-            const index = current.findIndex((participant) => participant.socketId === socketId);
-            if (index === -1) {
-                return [...current, updater(undefined)];
-            }
-
-            const next = [...current];
-            next[index] = updater(current[index]);
-            return next;
-        });
-    }, []);
-
-    const removeParticipant = React.useCallback((socketId: string) => {
-        setParticipants((current) => current.filter((participant) => participant.socketId !== socketId));
-
-        const timeoutId = remoteLevelResetTimeoutsRef.current.get(socketId);
-        if (timeoutId) {
-            window.clearTimeout(timeoutId);
-            remoteLevelResetTimeoutsRef.current.delete(socketId);
-        }
-    }, []);
-
-    const markRemoteActivity = React.useCallback((socketId: string) => {
-        updateParticipant(socketId, (current) => ({
-            socketId,
-            displayName: current?.displayName || normalizeUserLabel("", socketId),
-            connected: true,
-            level: 0.6,
-        }));
-
-        const previousTimeout = remoteLevelResetTimeoutsRef.current.get(socketId);
-        if (previousTimeout) {
-            window.clearTimeout(previousTimeout);
-        }
-
-        const timeoutId = window.setTimeout(() => {
-            updateParticipant(socketId, (current) => ({
-                socketId,
-                displayName: current?.displayName || normalizeUserLabel("", socketId),
-                connected: current?.connected ?? true,
-                level: 0,
-            }));
-            remoteLevelResetTimeoutsRef.current.delete(socketId);
-        }, 350);
-
-        remoteLevelResetTimeoutsRef.current.set(socketId, timeoutId);
-    }, [updateParticipant]);
-
-    const startAudioLevelMonitor = React.useCallback((stream: MediaStream, onLevel: (level: number) => void): (() => void) => {
-        const audioContext = new AudioContext();
-        const source = audioContext.createMediaStreamSource(stream);
-        const analyser = audioContext.createAnalyser();
-        analyser.fftSize = 256;
-        source.connect(analyser);
-
-        const dataArray = new Uint8Array(analyser.frequencyBinCount);
-        let rafId = 0;
-
-        const measure = () => {
-            analyser.getByteTimeDomainData(dataArray);
-            let sumSquares = 0;
-
-            for (let i = 0; i < dataArray.length; i += 1) {
-                const normalized = (dataArray[i] - 128) / 128;
-                sumSquares += normalized * normalized;
-            }
-
-            const rms = Math.sqrt(sumSquares / dataArray.length);
-            onLevel(Number.isFinite(rms) ? rms : 0);
-            rafId = window.requestAnimationFrame(measure);
-        };
-
-        measure();
-
-        return () => {
-            window.cancelAnimationFrame(rafId);
-            source.disconnect();
-            analyser.disconnect();
-            void audioContext.close();
-        };
-    }, []);
-
-    const cleanupSenderPlayer = React.useCallback((senderId: string) => {
-        const player = senderPlayersRef.current.get(senderId);
-        if (!player) {
-            return;
-        }
-
-        try {
-            if (player.mediaSource.readyState === "open") {
-                player.mediaSource.endOfStream();
-            }
-        } catch {
-            return;
-        }
-
-        player.queue = [];
-        player.sourceBufferReady = false;
-        player.sourceBuffer = null;
-        player.audio.pause();
-        player.audio.src = "";
-
-        if (player.audio.parentNode) {
-            player.audio.parentNode.removeChild(player.audio);
-        }
-
-        senderPlayersRef.current.delete(senderId);
-    }, []);
-
-    const cleanupAllSenderPlayers = React.useCallback(() => {
-        senderPlayersRef.current.forEach((_, senderId) => {
-            cleanupSenderPlayer(senderId);
-        });
-        senderPlayersRef.current.clear();
-    }, [cleanupSenderPlayer]);
-
-    const flushSenderQueue = React.useCallback((senderId: string) => {
-        const player = senderPlayersRef.current.get(senderId);
-        if (!player || !player.sourceBuffer || !player.sourceBufferReady || player.sourceBuffer.updating || player.isRemoving) {
-            return;
-        }
-
-        if (!player.queue.length) {
-            return;
-        }
-
-        const chunk = player.queue.shift();
-        if (!chunk) {
-            return;
-        }
-
-        try {
-            player.sourceBuffer.appendBuffer(chunk);
-            player.appendErrorCount = 0;
-            void player.audio.play().catch(() => {
-                return;
-            });
-        } catch {
-            player.appendErrorCount += 1;
-            player.queue.unshift(chunk);
-
-            if (player.appendErrorCount >= 3) {
-                cleanupSenderPlayer(senderId);
-                return;
-            }
-
-            window.setTimeout(() => {
-                flushSenderQueue(senderId);
-            }, 150);
-        }
-    }, [cleanupSenderPlayer]);
-
-    const createSenderPlayer = React.useCallback((senderId: string, mimeType: string): SenderPlayer | null => {
-        if (senderPlayersRef.current.has(senderId)) {
-            const existing = senderPlayersRef.current.get(senderId) || null;
-            if (existing && existing.mimeType !== mimeType) {
-                cleanupSenderPlayer(senderId);
-            } else {
-                return existing;
-            }
-        }
-
-        const audio = new Audio();
-        audio.autoplay = true;
-        audio.setAttribute("playsinline", "true");
-        audio.style.display = "none";
-        document.body.appendChild(audio);
-
-        const mediaSource = new MediaSource();
-        audio.src = URL.createObjectURL(mediaSource);
-
-        const player: SenderPlayer = {
-            audio,
-            mediaSource,
-            sourceBuffer: null,
-            queue: [],
-            mimeType,
-            sourceBufferReady: false,
-            isRemoving: false,
-            appendErrorCount: 0,
-        };
-
-        mediaSource.addEventListener("sourceopen", () => {
-            if (!MediaSource.isTypeSupported(mimeType)) {
-                cleanupSenderPlayer(senderId);
-                return;
-            }
-
-            try {
-                const sourceBuffer = mediaSource.addSourceBuffer(mimeType);
-                player.sourceBuffer = sourceBuffer;
-                try {
-                    sourceBuffer.mode = "sequence";
-                } catch {
-                    // Algunos navegadores no permiten cambiar el mode; continuamos con el default.
-                }
-
-                const readinessTimer = window.setTimeout(() => {
-                    player.sourceBufferReady = true;
-                    flushSenderQueue(senderId);
-                }, 200);
-
-                sourceBuffer.addEventListener("updateend", () => {
-                    window.clearTimeout(readinessTimer);
-                    if (!player.sourceBufferReady) {
-                        player.sourceBufferReady = true;
-                    }
-                    player.isRemoving = false;
-                    flushSenderQueue(senderId);
-                });
-
-                sourceBuffer.addEventListener("error", () => {
-                    cleanupSenderPlayer(senderId);
-                });
-
-                void audio.play().catch(() => {
-                    return;
-                });
-            } catch {
-                cleanupSenderPlayer(senderId);
-            }
-        });
-
-        mediaSource.addEventListener("sourceclose", () => {
-            player.sourceBufferReady = false;
-        });
-
-        senderPlayersRef.current.set(senderId, player);
-        return player;
-    }, [cleanupSenderPlayer, flushSenderQueue]);
-
-    const appendChunkForSender = React.useCallback((senderId: string, mimeType: string, audioChunk: ArrayBuffer) => {
-        const player = createSenderPlayer(senderId, mimeType);
-        if (!player) {
-            return;
-        }
-
-        player.queue.push(audioChunk);
-        if (player.queue.length > MAX_QUEUE_PER_SENDER) {
-            player.queue.shift();
-        }
-
-        flushSenderQueue(senderId);
-    }, [createSenderPlayer, flushSenderQueue]);
 
     const stopRecorder = React.useCallback(() => {
         const recorder = mediaRecorderRef.current;
@@ -981,6 +401,64 @@ function InterviewPageContent() {
         }
     }, [startRecorder, stopRecorder]);
 
+    const {
+        handleSocketMessage,
+    } = useInterviewRoomSocketMessageHandler({
+        selectedMimeTypeRef,
+        activeRoundIdRef,
+        activeRoundIndexRef,
+        sessionStatusRef,
+        totalRoundsRef,
+        currentQuestionRef,
+        shouldProcessRoundEvent,
+        setSessionStatus,
+        setActiveRoundId,
+        setActiveRoundIndex,
+        setTotalRounds,
+        setCurrentQuestion,
+        updateParticipant,
+        appendChunkForSender,
+        markRemoteActivity,
+        cleanupSenderPlayer,
+        removeParticipant,
+        restartRecorderForNewPeer,
+        handleTTSRoundStarted,
+        handleQuestionAudioReady,
+        handleTtsError,
+    });
+
+    const {
+        syncRoomState,
+    } = useInterviewRoomSessionSync({
+        backendHttpOriginRef,
+        activeRoundIdRef,
+        activeRoundIndexRef,
+        sessionStatusRef,
+        totalRoundsRef,
+        currentQuestionRef,
+        setIsSyncingState,
+        setSessionStatus,
+        setActiveRoundId,
+        setActiveRoundIndex,
+        setTotalRounds,
+        setCurrentQuestion,
+    });
+
+    const {
+        attachSocketLifecycleHandlers,
+    } = useInterviewRoomSocketLifecycle({
+        roleId,
+        resyncTimersRef,
+        setConnectionStatus,
+        setIsJoined,
+        setErrorMessage,
+        syncRoomState,
+        sendJson,
+        startRecorder,
+        requestResync,
+        handleSocketMessage,
+    });
+
     const leaveRoom = React.useCallback(async (options?: LeaveRoomOptions) => {
         const notifyServer = options?.notifyServer ?? true;
         const clearPersistedRejoin = options?.clearPersistedRejoin ?? false;
@@ -989,8 +467,7 @@ function InterviewPageContent() {
         setConnectionStatus("disconnected");
         setIsJoined(false);
         setSelfId("");
-        setParticipants([]);
-        setLocalLevel(0);
+        clearParticipantsAndAudio();
         setIsSyncingState(false);
         setIsMuted(false);
         setSessionStatus("idle");
@@ -1009,11 +486,7 @@ function InterviewPageContent() {
         sessionStatusRef.current = "idle";
         totalRoundsRef.current = 0;
         currentQuestionRef.current = null;
-        setIsRecording(false);
-        setRecordingCountdown(null);
-        setEvaluationResult(null);
-        setEvaluationId(null);
-        setIsEvaluating(false);
+        resetAnswerFlowForLeave();
 
         selfIdRef.current = "";
 
@@ -1029,28 +502,6 @@ function InterviewPageContent() {
             resyncTimersRef.current = [];
         }
 
-        if (answerRecorderRef.current && answerRecorderRef.current.state !== "inactive") {
-            answerRecorderRef.current.stop();
-        }
-        answerRecorderRef.current = null;
-        answerChunksRef.current = [];
-        if (autoRecordTimerRef.current !== null) {
-            window.clearTimeout(autoRecordTimerRef.current);
-            autoRecordTimerRef.current = null;
-        }
-        if (countdownIntervalRef.current !== null) {
-            window.clearInterval(countdownIntervalRef.current);
-            countdownIntervalRef.current = null;
-        }
-        if (recordingDurationTimerRef.current !== null) {
-            window.clearTimeout(recordingDurationTimerRef.current);
-            recordingDurationTimerRef.current = null;
-        }
-        if (answerStreamRef.current) {
-            answerStreamRef.current.getTracks().forEach(t => t.stop());
-            answerStreamRef.current = null;
-        }
-
         stopRecorder();
 
         if (localStreamRef.current) {
@@ -1060,12 +511,6 @@ function InterviewPageContent() {
             localStreamRef.current = null;
         }
 
-        remoteLevelResetTimeoutsRef.current.forEach((timeoutId) => {
-            window.clearTimeout(timeoutId);
-        });
-        remoteLevelResetTimeoutsRef.current.clear();
-
-        cleanupAllSenderPlayers();
         cleanupTTSAudio();
 
         const socket = socketRef.current;
@@ -1084,7 +529,7 @@ function InterviewPageContent() {
         if (clearPersistedRejoin) {
             clearPersistedRejoinState();
         }
-    }, [cleanupAllSenderPlayers, cleanupTTSAudio, sendJson, stopRecorder]);
+    }, [clearParticipantsAndAudio, cleanupTTSAudio, resetAnswerFlowForLeave, sendJson, stopRecorder]);
 
     React.useEffect(() => {
         return () => {
@@ -1182,327 +627,15 @@ function InterviewPageContent() {
             socket.binaryType = "arraybuffer";
             socketRef.current = socket;
 
-            const syncRoomState = async () => {
-                const backendHttpOrigin = backendHttpOriginRef.current;
-                if (!backendHttpOrigin) {
-                    return;
-                }
-
-                setIsSyncingState(true);
-                try {
-                    const stateResponse = await fetch(
-                        `${backendHttpOrigin}/api/group-sessions/${encodeURIComponent(resolvedSessionCode)}/state`,
-                        {
-                            method: "GET",
-                            headers,
-                        },
-                    );
-
-                    if (!stateResponse.ok) {
-                        return;
-                    }
-
-                    const snapshot = await stateResponse.json();
-                    const restored = extractGroupInterviewUiState(snapshot);
-
-                    activeRoundIdRef.current = restored.roundId;
-                    activeRoundIndexRef.current = restored.roundIndex;
-                    sessionStatusRef.current = restored.status;
-                    totalRoundsRef.current = restored.totalRounds;
-
-                    setSessionStatus(restored.status);
-                    setActiveRoundId(restored.roundId);
-                    setActiveRoundIndex(restored.roundIndex);
-                    setTotalRounds(restored.totalRounds);
-
-                    if (restored.question) {
-                        const skill = restored.question.targetSkill ?? "General";
-                        const difficulty = restored.question.difficulty ?? "N/A";
-
-                        const restoredQuestion: AudioPlayerQuestion = {
-                            id: restored.question.roundId || `round-${restored.question.roundIndex ?? "active"}`,
-                            text: restored.question.text,
-                            note: `Skill objetivo: ${skill} | Dificultad: ${difficulty}`,
-                        };
-                        currentQuestionRef.current = restoredQuestion;
-                        setCurrentQuestion(restoredQuestion);
-                    }
-                } catch {
-                    return;
-                } finally {
-                    setIsSyncingState(false);
-                }
-            };
-
-            socket.onopen = () => {
-                setConnectionStatus("connected");
-                setIsJoined(true);
-                void syncRoomState();
-
-                persistRejoinState({
-                    roomId: resolvedSessionCode,
-                    displayName: safeDisplayName,
-                    userId: sessionUserId,
-                    roleId,
-                });
-
-                sendJson({
-                    event: "join",
-                    from: sessionUserId,
-                    user_id: sessionUserId,
-                    displayName: safeDisplayName,
-                });
-
-                const started = startRecorder(localStream);
-                if (!started) {
-                    setErrorMessage("No se pudo iniciar la captura de audio. Revisa permisos y compatibilidad.");
-                }
-
-                // El peer nuevo pide resincronización para que todos los existentes
-                // reinicien su MediaRecorder y reenvíen segmentos iniciales decodificables.
-                requestResync("join-initial");
-                const t1 = window.setTimeout(() => requestResync("join-retry-1"), 450);
-                const t2 = window.setTimeout(() => requestResync("join-retry-2"), 1200);
-                resyncTimersRef.current.push(t1, t2);
-            };
-
-            socket.onclose = (closeEvent) => {
-                setConnectionStatus("disconnected");
-                if (!isJoined) {
-                    const reason = closeEvent.reason || "";
-
-                    if (reason === "session_already_started") {
-                        clearPersistedRejoinState();
-                        setErrorMessage(
-                            "Esta sesión ya ha finalizado o fue cerrada. Crea una nueva sesión para continuar."
-                        );
-                    } else if (reason === "group_session_not_found") {
-                        clearPersistedRejoinState();
-                        setErrorMessage(
-                            "El Session Code no existe o ya no está disponible. Verifica el código e intenta de nuevo."
-                        );
-                    } else if (reason === "user_not_found") {
-                        setErrorMessage(
-                            "Tu usuario no fue encontrado. Vuelve a iniciar sesión."
-                        );
-                    } else {
-                        const detail = reason
-                            ? ` (${reason})`
-                            : closeEvent.code !== 1000 ? ` (código ${closeEvent.code})` : "";
-                        setErrorMessage(
-                            `No se pudo conectar a la sala${detail}. Verifica que el backend esté corriendo y que el Session Code sea válido.`
-                        );
-                    }
-                }
-            };
-
-            socket.onerror = () => {
-                console.warn("[ws] Error de conexión WebSocket");
-            };
-
-            socket.onmessage = (event: MessageEvent) => {
-                if (event.data instanceof ArrayBuffer) {
-                    const buffer = new Uint8Array(event.data);
-                    if (buffer.length < 2) {
-                        return;
-                    }
-
-                    const userIdLength = buffer[0];
-                    if (userIdLength === 0 || buffer.length <= 1 + userIdLength) {
-                        return;
-                    }
-
-                    const userIdBytes = buffer.slice(1, 1 + userIdLength);
-                    const senderId = new TextDecoder().decode(userIdBytes);
-                    if (!senderId || senderId === sessionUserId) {
-                        return;
-                    }
-
-                    const payloadBytes = buffer.slice(1 + userIdLength);
-                    const payloadBuffer = new Uint8Array(payloadBytes.length);
-                    payloadBuffer.set(payloadBytes);
-                    const decoded = unwrapIncomingAudioPayload(payloadBuffer.buffer);
-                    if (!decoded.audioBuffer) {
-                        return;
-                    }
-
-                    const mimeType = decoded.mimeType || selectedMimeTypeRef.current || "audio/webm;codecs=opus";
-
-                    updateParticipant(senderId, (current) => ({
-                        socketId: senderId,
-                        displayName: current?.displayName || normalizeUserLabel("", senderId),
-                        connected: true,
-                        level: current?.level || 0,
-                    }));
-
-                    appendChunkForSender(senderId, mimeType, decoded.audioBuffer);
-                    markRemoteActivity(senderId);
-                    return;
-                }
-
-                if (typeof event.data !== "string") {
-                    return;
-                }
-
-                let payload: SignalingMessage | null = null;
-                try {
-                    payload = JSON.parse(event.data) as SignalingMessage;
-                } catch {
-                    return;
-                }
-
-                if (!payload?.event) {
-                    return;
-                }
-
-                // Validación fuerte de ronda vieja para question_generated / question_new:
-                // si el evento trae un round_index menor al activo, es un evento tardío y se descarta.
-                if (payload.event === "question_generated" || payload.event === "question_new") {
-                    const eventRoundId = payload.round_id;
-                    const eventRoundIndex = payload.round_index !== undefined
-                        ? Number(payload.round_index)
-                        : null;
-                    const currentIndex = activeRoundIndexRef.current;
-
-                    if (eventRoundId && activeRoundIdRef.current && eventRoundId !== activeRoundIdRef.current) {
-                        return;
-                    }
-                    if (
-                        eventRoundIndex !== null
-                        && !Number.isNaN(eventRoundIndex)
-                        && currentIndex !== null
-                        && eventRoundIndex < currentIndex
-                    ) {
-                        return;
-                    }
-                }
-
-                const nextState = applyGroupInterviewEvent(
-                    {
-                        status: sessionStatusRef.current,
-                        roundId: activeRoundIdRef.current,
-                        roundIndex: activeRoundIndexRef.current,
-                        totalRounds: totalRoundsRef.current,
-                        question: currentQuestionRef.current
-                            ? {
-                                roundId: activeRoundIdRef.current,
-                                roundIndex: activeRoundIndexRef.current,
-                                text: currentQuestionRef.current.text,
-                                targetSkill: null,
-                                difficulty: null,
-                            }
-                            : null,
-                    },
-                    payload,
-                    shouldProcessRoundEvent,
-                );
-
-                const stateChanged =
-                    nextState.status !== sessionStatusRef.current
-                    || nextState.roundId !== activeRoundIdRef.current
-                    || nextState.roundIndex !== activeRoundIndexRef.current
-                    || nextState.totalRounds !== totalRoundsRef.current
-                    || nextState.question;
-
-                if (stateChanged) {
-                    // Actualizar refs INMEDIATAMENTE en el mismo tick de JS.
-                    if (nextState.roundId !== activeRoundIdRef.current) {
-                        activeRoundIdRef.current = nextState.roundId;
-                    }
-                    if (nextState.roundIndex !== activeRoundIndexRef.current) {
-                        activeRoundIndexRef.current = nextState.roundIndex;
-                    }
-                    if (nextState.status !== sessionStatusRef.current) {
-                        sessionStatusRef.current = nextState.status;
-                    }
-                    if (nextState.totalRounds !== totalRoundsRef.current) {
-                        totalRoundsRef.current = nextState.totalRounds;
-                    }
-
-                    setSessionStatus(nextState.status);
-                    setActiveRoundId(nextState.roundId);
-                    setActiveRoundIndex(nextState.roundIndex);
-                    setTotalRounds(nextState.totalRounds);
-
-                    if (nextState.question) {
-                        const nextQuestion: AudioPlayerQuestion = {
-                            id: nextState.question.roundId || `round-${nextState.question.roundIndex ?? "active"}`,
-                            text: nextState.question.text,
-                            note: `Skill objetivo: ${nextState.question.targetSkill ?? "General"} | Dificultad: ${nextState.question.difficulty ?? "N/A"}`,
-                        };
-                        currentQuestionRef.current = nextQuestion;
-                        setCurrentQuestion(nextQuestion);
-                    }
-                }
-
-                if (
-                    payload.event === "interview_started"
-                    || payload.event === "interview_closed"
-                    || payload.event === "round_started"
-                    || payload.event === "question_generated"
-                    || payload.event === "question_new"
-                ) {
-                    if (payload.event === "interview_closed") {
-                        clearPersistedRejoinState();
-                    }
-                    if (payload.event === "round_started") {
-                        if (payload.round_id) {
-                            activeRoundIdRef.current = payload.round_id;
-                        }
-                        handleTTSRoundStarted(payload.round_id ?? null);
-                    }
-                    return;
-                }
-
-                // Eventos de audio TTS automático.
-                // La ref ya fue actualizada síncronamente cuando llegó question_generated
-                // o round_started, por lo que no hay ventana de carrera.
-                if (payload.event === "question_audio_ready") {
-                    const eventRoundId = (payload as QuestionAudioReadyPayload).round_id;
-                    if (eventRoundId && eventRoundId === activeRoundIdRef.current) {
-                        handleQuestionAudioReady(payload as QuestionAudioReadyPayload);
-                    }
-                    return;
-                }
-
-                if (payload.event === "tts_error") {
-                    const eventRoundId = (payload as TtsErrorPayload).round_id;
-                    if (eventRoundId && eventRoundId === activeRoundIdRef.current) {
-                        handleTtsError(payload as TtsErrorPayload);
-                    }
-                    return;
-                }
-
-                const senderId = payload.from || payload.user_id || "";
-                if (!senderId || senderId === sessionUserId) {
-                    return;
-                }
-
-                if (payload.event === "join" || payload.event === "user_joined") {
-                    updateParticipant(senderId, (current) => ({
-                        socketId: senderId,
-                        displayName: payload?.displayName?.trim()
-                            ? payload.displayName.trim()
-                            : current?.displayName || normalizeUserLabel("", senderId),
-                        connected: true,
-                        level: current?.level || 0,
-                    }));
-
-                    // Reenviar segmentos iniciales para que el peer nuevo pueda decodificar nuestro stream.
-                    restartRecorderForNewPeer(true);
-                    return;
-                }
-
-                if (payload.event === "request_resync") {
-                    restartRecorderForNewPeer(true);
-                    return;
-                }
-
-                if (payload.event === "leave" || payload.event === "user_left") {
-                    cleanupSenderPlayer(senderId);
-                    removeParticipant(senderId);
-                }
-            };
+            attachSocketLifecycleHandlers({
+                socket,
+                headers,
+                resolvedSessionCode,
+                safeDisplayName,
+                sessionUserId,
+                localStream,
+                isJoinedSnapshot: isJoined,
+            });
         } catch (error) {
             const fallback = "No fue posible conectarte a la sala. Revisa permisos de microfono y vuelve a intentar.";
             const msg = error instanceof Error && error.message ? error.message : fallback;
@@ -1511,48 +644,20 @@ function InterviewPageContent() {
         } finally {
             setIsConnecting(false);
         }
-    }, [appendChunkForSender, cleanupSenderPlayer, ensureSessionCode, fetchSessionDetail, getAuthHeaders, getCurrentUserId, handleQuestionAudioReady, handleTtsError, handleTTSRoundStarted, leaveRoom, markRemoteActivity, removeParticipant, requestResync, restartRecorderForNewPeer, roleId, roomId, sendJson, shouldProcessRoundEvent, startAudioLevelMonitor, startRecorder, unlockPlayback, updateParticipant, displayName]);
+    }, [attachSocketLifecycleHandlers, displayName, ensureSessionCode, fetchSessionDetail, getAuthHeaders, getCurrentUserId, isJoined, leaveRoom, roleId, roomId, startAudioLevelMonitor, unlockPlayback]);
 
-    React.useEffect(() => {
-        const persisted = readPersistedRejoinState();
-        if (!persisted) {
-            return;
-        }
-
-        if (!displayName.trim()) {
-            setDisplayName(persisted.displayName);
-        }
-
-        if (!roomId.trim()) {
-            setRoomId(persisted.roomId);
-        }
-    }, [displayName, roomId]);
-
-    React.useEffect(() => {
-        if (!router.isReady || isJoined || isConnecting || autoRejoinAttemptedRef.current) {
-            return;
-        }
-
-        const persisted = readPersistedRejoinState();
-        if (!persisted) {
-            return;
-        }
-
-        if (persisted.roleId && roleId && persisted.roleId !== roleId) {
-            return;
-        }
-
-        if (!displayName.trim() || !roomId.trim()) {
-            return;
-        }
-
-        autoRejoinAttemptedRef.current = true;
-        void joinRoom({
-            roomIdOverride: persisted.roomId,
-            displayNameOverride: persisted.displayName,
-            allowRejoinDuringInProgress: true,
-        });
-    }, [displayName, isConnecting, isJoined, joinRoom, roleId, roomId, router.isReady]);
+    useInterviewRoomRejoin({
+        displayName,
+        roomId,
+        roleId,
+        isJoined,
+        isConnecting,
+        routerIsReady: router.isReady,
+        setDisplayName,
+        setRoomId,
+        joinRoom,
+        autoRejoinAttemptedRef,
+    });
 
     const toggleMute = () => {
         const localStream = localStreamRef.current;
@@ -1576,170 +681,6 @@ function InterviewPageContent() {
             setErrorMessage("No se pudo copiar el Room ID automaticamente.");
         }
     };
-
-    const startAnswerRecording = React.useCallback(() => {
-        if (!localStreamRef.current) return;
-        const clonedStream = localStreamRef.current.clone();
-        if (answerStreamRef.current) {
-            answerStreamRef.current.getTracks().forEach(t => t.stop());
-        }
-        answerStreamRef.current = clonedStream;
-        const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-            ? "audio/webm;codecs=opus"
-            : "audio/webm";
-        const recorder = new MediaRecorder(clonedStream, { mimeType });
-        answerChunksRef.current = [];
-        recorder.ondataavailable = (e) => {
-            if (e.data.size > 0) {
-                answerChunksRef.current.push(e.data);
-            }
-        };
-        recorder.start(250);
-        answerRecorderRef.current = recorder;
-        setIsRecording(true);
-        recordingDurationTimerRef.current = window.setTimeout(() => {
-            recordingDurationTimerRef.current = null;
-            stopSubmitFnRef.current?.();
-        }, 10000);
-    }, []);
-
-    const stopAndSubmitAnswer = React.useCallback(() => {
-        const recorder = answerRecorderRef.current;
-        if (!recorder || recorder.state === "inactive") return;
-        if (recordingDurationTimerRef.current !== null) {
-            window.clearTimeout(recordingDurationTimerRef.current);
-            recordingDurationTimerRef.current = null;
-        }
-        recorder.onstop = async () => {
-            const roundId = activeRoundIdRef.current;
-            const blob = new Blob(answerChunksRef.current, { type: recorder.mimeType });
-            answerRecorderRef.current = null;
-            answerChunksRef.current = [];
-            if (answerStreamRef.current) {
-                answerStreamRef.current.getTracks().forEach(t => t.stop());
-                answerStreamRef.current = null;
-            }
-            setIsRecording(false);
-            if (!roundId) return;
-            const wavBlob = await convertBlobToWav(blob);
-            const token = getAccessToken();
-            if (!token) return;
-            setSubmissionError(null);
-            setIsSubmitting(true);
-            try {
-                const fd = new FormData();
-                fd.append("round_id", roundId);
-                fd.append("audio_file", wavBlob, "answer.wav");
-                const res = await fetch(
-                    `${backendHttpOriginRef.current ?? ""}/api/group-sessions/${encodeURIComponent(roomId)}/answers/audio`,
-                    { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: fd }
-                );
-                if (!res.ok) {
-                    if (res.status === 422) throw new Error("No se detectó voz en tu respuesta. Habla más cerca del micrófono e intenta de nuevo.");
-                    throw new Error(`Error ${res.status}: ${res.statusText}`);
-                }
-                const data = (await res.json()) as { evaluation_id: string; transcription: string };
-                if (!data.evaluation_id) throw new Error("El backend no retornó evaluation_id");
-                setTranscription(data.transcription ?? null);
-                setEvaluationId(data.evaluation_id);
-                setIsEvaluating(true);
-            } catch (err) {
-                setSubmissionError(err instanceof Error ? err.message : "Error al enviar audio");
-            } finally {
-                setIsSubmitting(false);
-            }
-        };
-        recorder.stop();
-    }, [roomId]);
-
-    React.useEffect(() => {
-        if (!evaluationId || !isEvaluating) return;
-        const token = getAccessToken();
-        if (!token) return;
-        let cancelled = false;
-        const poll = async () => {
-            try {
-                const res = await fetch(
-                    `${backendHttpOriginRef.current ?? ""}/evaluations/evaluation/${evaluationId}`,
-                    { headers: { Authorization: `Bearer ${token}` } }
-                );
-                if (!res.ok) return;
-                const data = (await res.json()) as EvaluationResult;
-                if (data.status === "completed" || data.status === "failed") {
-                    if (!cancelled) {
-                        setEvaluationResult(data);
-                        setIsEvaluating(false);
-                    }
-                } else if (!cancelled) {
-                    setTimeout(() => void poll(), 3000);
-                }
-            } catch {
-                if (!cancelled) setIsEvaluating(false);
-            }
-        };
-        void poll();
-        return () => { cancelled = true; };
-    }, [evaluationId, isEvaluating]);
-
-    React.useEffect(() => {
-        startRecordingFnRef.current = startAnswerRecording;
-        stopSubmitFnRef.current = stopAndSubmitAnswer;
-    }, [startAnswerRecording, stopAndSubmitAnswer]);
-
-    React.useEffect(() => {
-        if (recordingDurationTimerRef.current !== null) {
-            window.clearTimeout(recordingDurationTimerRef.current);
-            recordingDurationTimerRef.current = null;
-        }
-        setIsRecording(false);
-        setIsSubmitting(false);
-        setRecordingCountdown(null);
-        setSubmissionError(null);
-        setTranscription(null);
-        setEvaluationResult(null);
-        setEvaluationId(null);
-        setIsEvaluating(false);
-    }, [activeRoundId]);
-
-    React.useEffect(() => {
-        if (ttsStatus !== "ended" || !activeRoundId) {
-            if (autoRecordTimerRef.current !== null) {
-                window.clearTimeout(autoRecordTimerRef.current);
-                autoRecordTimerRef.current = null;
-            }
-            if (countdownIntervalRef.current !== null) {
-                window.clearInterval(countdownIntervalRef.current);
-                countdownIntervalRef.current = null;
-            }
-            setRecordingCountdown(null);
-            return;
-        }
-        let count = 5;
-        setRecordingCountdown(count);
-        countdownIntervalRef.current = window.setInterval(() => {
-            count -= 1;
-            setRecordingCountdown(count);
-            if (count <= 0) {
-                window.clearInterval(countdownIntervalRef.current!);
-                countdownIntervalRef.current = null;
-            }
-        }, 1000);
-        autoRecordTimerRef.current = window.setTimeout(() => {
-            autoRecordTimerRef.current = null;
-            if (!answerRecorderRef.current) startRecordingFnRef.current?.();
-        }, 5000);
-        return () => {
-            if (autoRecordTimerRef.current !== null) {
-                window.clearTimeout(autoRecordTimerRef.current);
-                autoRecordTimerRef.current = null;
-            }
-            if (countdownIntervalRef.current !== null) {
-                window.clearInterval(countdownIntervalRef.current);
-                countdownIntervalRef.current = null;
-            }
-            setRecordingCountdown(null);
-        };
-    }, [ttsStatus, activeRoundId]);
 
     const localName = displayName.trim() || "Tu usuario";
     const activeRemoteCount = participants.length;
