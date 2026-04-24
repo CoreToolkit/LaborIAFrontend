@@ -631,7 +631,6 @@ function InterviewPageContent() {
                 safeDisplayName,
                 sessionUserId,
                 localStream,
-                isJoinedSnapshot: isJoined,
             });
         } catch (error) {
             const fallback = "No fue posible conectarte a la sala. Revisa permisos de microfono y vuelve a intentar.";

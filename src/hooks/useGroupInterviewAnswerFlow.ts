@@ -1,17 +1,15 @@
 import React from "react";
 import type { TTSAudioStatus } from "@/hooks/useTTSAudioPlayer";
 import { getAccessToken } from "@/utils/session";
-import { convertBlobToWav, mergeWavBlobs } from "@/utils/interviewRoom";
+import { convertBlobToWav } from "@/utils/interviewRoom";
 
 // ─── Constantes de grabación ────────────────────────────────────────────────
 /** RMS por debajo del cual se considera silencio (≈ -40 dBFS). */
 const SILENCE_THRESHOLD = 0.01;
 /** Milisegundos de silencio continuo antes de detener la grabación. */
 const SILENCE_DURATION_MS = 5_000;
-/** Tiempo al inicio de la grabación donde el silencio no cuenta (el usuario puede estar pensando). */
+/** Tiempo al inicio de la grabación donde el silencio no cuenta. */
 const GRACE_PERIOD_MS = 3_000;
-/** Cada cuántos milisegundos se guarda un segmento WAV en memoria. */
-const SEGMENT_INTERVAL_MS = 5_000;
 
 export type EvaluationResult = {
   evaluation_id: string;
@@ -55,25 +53,28 @@ export function useGroupInterviewAnswerFlow({
 
   // ─── Refs de grabación ───────────────────────────────────────────────────
   const answerRecorderRef = React.useRef<MediaRecorder | null>(null);
-  /** Chunks crudos (webm) del segmento actual. */
+  /**
+   * Todos los chunks webm de la sesión de grabación.
+   * IMPORTANTE: los chunks de WebM/Opus NO son independientes entre sí —
+   * el primer chunk siempre contiene el initialization segment y los
+   * siguientes están en delta. Por eso se acumulan todos aquí y se
+   * convierten en un único WAV al final, en lugar de hacer mini-segmentos.
+   */
   const answerChunksRef = React.useRef<Blob[]>([]);
-  /** Segmentos WAV de 5 s acumulados en memoria. */
-  const wavSegmentsRef = React.useRef<Blob[]>([]);
-  /** Stream clonado para la grabación de respuesta. */
+  /** Stream clonado dedicado a la grabación de respuesta. */
   const answerStreamRef = React.useRef<MediaStream | null>(null);
 
-  // ─── Refs de timers / detección ─────────────────────────────────────────
+  // ─── Refs de timers / detección de silencio ──────────────────────────────
   const autoRecordTimerRef = React.useRef<number | null>(null);
   const countdownIntervalRef = React.useRef<number | null>(null);
-  const segmentIntervalRef = React.useRef<number | null>(null);
   const silenceMonitorRafRef = React.useRef<number | null>(null);
   const audioContextRef = React.useRef<AudioContext | null>(null);
 
-  // ─── Refs de funciones (para acceso estable en closures) ────────────────
+  // ─── Refs de funciones (acceso estable en closures del RAF) ──────────────
   const startRecordingFnRef = React.useRef<(() => void) | null>(null);
   const stopSubmitFnRef = React.useRef<(() => void) | null>(null);
 
-  // ─── Limpieza completa de timers, RAF y stream ──────────────────────────
+  // ─── Limpieza completa ────────────────────────────────────────────────────
   const clearTimersAndStreams = React.useCallback(() => {
     if (autoRecordTimerRef.current !== null) {
       window.clearTimeout(autoRecordTimerRef.current);
@@ -82,10 +83,6 @@ export function useGroupInterviewAnswerFlow({
     if (countdownIntervalRef.current !== null) {
       window.clearInterval(countdownIntervalRef.current);
       countdownIntervalRef.current = null;
-    }
-    if (segmentIntervalRef.current !== null) {
-      window.clearInterval(segmentIntervalRef.current);
-      segmentIntervalRef.current = null;
     }
     if (silenceMonitorRafRef.current !== null) {
       cancelAnimationFrame(silenceMonitorRafRef.current);
@@ -101,13 +98,12 @@ export function useGroupInterviewAnswerFlow({
     }
   }, []);
 
-  // ─── startAnswerRecording ────────────────────────────────────────────────
+  // ─── startAnswerRecording ─────────────────────────────────────────────────
   const startAnswerRecording = React.useCallback(() => {
     if (!localStreamRef.current) {
       return;
     }
 
-    // Clonar stream para no interferir con la transmisión en sala
     const clonedStream = localStreamRef.current.clone();
     if (answerStreamRef.current) {
       answerStreamRef.current.getTracks().forEach((track) => track.stop());
@@ -120,10 +116,12 @@ export function useGroupInterviewAnswerFlow({
 
     const recorder = new MediaRecorder(clonedStream, { mimeType });
     answerChunksRef.current = [];
-    wavSegmentsRef.current = [];
 
     recorder.ondataavailable = (event) => {
       if (event.data.size > 0) {
+        // Acumular TODOS los chunks en orden.
+        // El primer chunk es el initialization segment de WebM y es
+        // imprescindible para poder decodificar el audio al final.
         answerChunksRef.current.push(event.data);
       }
     };
@@ -146,15 +144,14 @@ export function useGroupInterviewAnswerFlow({
     let lastTimestamp: number | null = null;
 
     const monitorSilence = (timestamp: number) => {
-      // Si el contexto fue cerrado (cleanup), detener el loop
       if (!audioContextRef.current) {
-        return;
+        return; // AudioContext cerrado: el loop ya no es necesario
       }
 
       const delta = lastTimestamp !== null ? timestamp - lastTimestamp : 16;
       lastTimestamp = timestamp;
 
-      // Grace period: ignorar silencio los primeros segundos
+      // Grace period: no contar silencio durante los primeros segundos
       if (graceRemaining > 0) {
         graceRemaining -= delta;
         silenceMonitorRafRef.current = requestAnimationFrame(monitorSilence);
@@ -163,7 +160,6 @@ export function useGroupInterviewAnswerFlow({
 
       analyser.getByteTimeDomainData(dataArray);
 
-      // Calcular RMS para detectar actividad de voz
       let sumSquares = 0;
       for (let i = 0; i < dataArray.length; i++) {
         const norm = (dataArray[i] - 128) / 128;
@@ -174,46 +170,26 @@ export function useGroupInterviewAnswerFlow({
       if (rms < SILENCE_THRESHOLD) {
         silenceAccumMs += delta;
         if (silenceAccumMs >= SILENCE_DURATION_MS) {
-          // Silencio detectado: detener y enviar
+          // Silencio sostenido detectado → detener y enviar
           stopSubmitFnRef.current?.();
           return; // Salir del loop RAF
         }
       } else {
-        silenceAccumMs = 0; // Voz detectada: resetear contador
+        silenceAccumMs = 0; // Voz detectada → reiniciar contador
       }
 
       silenceMonitorRafRef.current = requestAnimationFrame(monitorSilence);
     };
 
     silenceMonitorRafRef.current = requestAnimationFrame(monitorSilence);
-
-    // ── Snapshot de segmento WAV cada SEGMENT_INTERVAL_MS ────────────────
-    segmentIntervalRef.current = window.setInterval(() => {
-      const chunks = answerChunksRef.current.splice(0); // tomar y vaciar
-      if (chunks.length === 0) {
-        return;
-      }
-      const segmentBlob = new Blob(chunks, { type: mimeType });
-      // Convertir a WAV en background; si falla, el chunk se pierde pero
-      // los demás segmentos siguen acumulándose.
-      void convertBlobToWav(segmentBlob)
-        .then((wavBlob) => {
-          wavSegmentsRef.current.push(wavBlob);
-        })
-        .catch(() => undefined);
-    }, SEGMENT_INTERVAL_MS);
   }, [localStreamRef]);
 
-  // ─── stopAndSubmitAnswer ─────────────────────────────────────────────────
+  // ─── stopAndSubmitAnswer ──────────────────────────────────────────────────
   const stopAndSubmitAnswer = React.useCallback(() => {
-    // Detener monitoreo de silencio y snapshots
+    // Detener monitoreo de silencio
     if (silenceMonitorRafRef.current !== null) {
       cancelAnimationFrame(silenceMonitorRafRef.current);
       silenceMonitorRafRef.current = null;
-    }
-    if (segmentIntervalRef.current !== null) {
-      window.clearInterval(segmentIntervalRef.current);
-      segmentIntervalRef.current = null;
     }
     if (audioContextRef.current) {
       void audioContextRef.current.close().catch(() => undefined);
@@ -228,8 +204,11 @@ export function useGroupInterviewAnswerFlow({
     recorder.onstop = async () => {
       const roundId = activeRoundIdRef.current;
 
-      // Chunks que quedaron después del último snapshot
-      const remainingChunks = answerChunksRef.current.splice(0);
+      // Tomar TODOS los chunks acumulados durante la grabación completa.
+      // El primer chunk contiene el initialization segment de WebM sin el
+      // cual los chunks posteriores no pueden decodificarse. Por eso NO
+      // fragmentamos — todo se convierte de una sola vez.
+      const allChunks = answerChunksRef.current.splice(0);
       answerRecorderRef.current = null;
 
       if (answerStreamRef.current) {
@@ -239,33 +218,19 @@ export function useGroupInterviewAnswerFlow({
 
       setIsRecording(false);
 
-      if (!roundId) {
-        return;
-      }
-
-      // Convertir chunks restantes y agregar al final de los segmentos
-      if (remainingChunks.length > 0) {
-        try {
-          const remainingBlob = new Blob(remainingChunks, { type: recorder.mimeType });
-          const wavBlob = await convertBlobToWav(remainingBlob);
-          wavSegmentsRef.current.push(wavBlob);
-        } catch {
-          // Si falla la conversión del último segmento, continuar con los que hay
-        }
-      }
-
-      const segments = wavSegmentsRef.current.splice(0);
-      if (segments.length === 0) {
+      if (!roundId || allChunks.length === 0) {
+        if (!roundId) return;
         setSubmissionError("No se capturó audio. Asegúrate de hablar cerca del micrófono.");
         return;
       }
 
-      // Unir todos los segmentos WAV en uno solo
-      let finalWav: Blob;
+      // Convertir el WebM completo a WAV en una sola operación
+      let wavBlob: Blob;
       try {
-        finalWav = await mergeWavBlobs(segments);
+        const fullWebmBlob = new Blob(allChunks, { type: recorder.mimeType });
+        wavBlob = await convertBlobToWav(fullWebmBlob);
       } catch {
-        setSubmissionError("Error al unir los segmentos de audio.");
+        setSubmissionError("Error al procesar el audio. Intenta de nuevo.");
         return;
       }
 
@@ -280,7 +245,7 @@ export function useGroupInterviewAnswerFlow({
       try {
         const formData = new FormData();
         formData.append("round_id", roundId);
-        formData.append("audio_file", finalWav, "answer.wav");
+        formData.append("audio_file", wavBlob, "answer.wav");
 
         const response = await fetch(
           `${backendHttpOriginRef.current ?? ""}/api/group-sessions/${encodeURIComponent(roomId)}/answers/audio`,
@@ -316,7 +281,7 @@ export function useGroupInterviewAnswerFlow({
     recorder.stop();
   }, [activeRoundIdRef, backendHttpOriginRef, roomId]);
 
-  // ─── Reset al salir de la sala ──────────────────────────────────────────
+  // ─── Reset al salir de la sala ────────────────────────────────────────────
   const resetForLeave = React.useCallback(() => {
     const recorder = answerRecorderRef.current;
     if (recorder && recorder.state !== "inactive") {
@@ -326,7 +291,6 @@ export function useGroupInterviewAnswerFlow({
 
     answerRecorderRef.current = null;
     answerChunksRef.current = [];
-    wavSegmentsRef.current = [];
     clearTimersAndStreams();
 
     setIsRecording(false);
@@ -339,7 +303,7 @@ export function useGroupInterviewAnswerFlow({
     setIsEvaluating(false);
   }, [clearTimersAndStreams]);
 
-  // ─── Polling de evaluación ───────────────────────────────────────────────
+  // ─── Polling de evaluación ────────────────────────────────────────────────
   React.useEffect(() => {
     if (!evaluationId || !isEvaluating) {
       return;
@@ -388,15 +352,16 @@ export function useGroupInterviewAnswerFlow({
     };
   }, [backendHttpOriginRef, evaluationId, isEvaluating]);
 
-  // ─── Mantener refs de funciones siempre actualizadas ───────────────────
+  // ─── Mantener refs de funciones siempre actualizadas ─────────────────────
   React.useEffect(() => {
     startRecordingFnRef.current = startAnswerRecording;
     stopSubmitFnRef.current = stopAndSubmitAnswer;
   }, [startAnswerRecording, stopAndSubmitAnswer]);
 
-  // ─── Reset al cambiar de ronda ──────────────────────────────────────────
+  // ─── Reset al cambiar de ronda ────────────────────────────────────────────
   React.useEffect(() => {
     clearTimersAndStreams();
+    answerChunksRef.current = [];
 
     setIsRecording(false);
     setIsSubmitting(false);
@@ -406,12 +371,9 @@ export function useGroupInterviewAnswerFlow({
     setEvaluationResult(null);
     setEvaluationId(null);
     setIsEvaluating(false);
-    answerChunksRef.current = [];
-    wavSegmentsRef.current = [];
   }, [activeRoundId, clearTimersAndStreams]);
 
-  // ─── Trigger automático cuando el TTS termina ───────────────────────────
-  // Espera 5 s después de que ElevenLabs termina de hablar y luego graba.
+  // ─── Trigger automático cuando el TTS termina ─────────────────────────────
   React.useEffect(() => {
     if (ttsStatus !== "ended" || !activeRoundId) {
       if (autoRecordTimerRef.current !== null) {
@@ -459,7 +421,7 @@ export function useGroupInterviewAnswerFlow({
     };
   }, [ttsStatus, activeRoundId]);
 
-  // ─── Cleanup al desmontar ────────────────────────────────────────────────
+  // ─── Cleanup al desmontar ─────────────────────────────────────────────────
   React.useEffect(() => {
     return () => {
       resetForLeave();

@@ -31,7 +31,6 @@ type AttachSocketLifecycleParams = {
   safeDisplayName: string;
   sessionUserId: string;
   localStream: MediaStream;
-  isJoinedSnapshot: boolean;
 };
 
 export function useInterviewRoomSocketLifecycle({
@@ -53,9 +52,14 @@ export function useInterviewRoomSocketLifecycle({
     safeDisplayName,
     sessionUserId,
     localStream,
-    isJoinedSnapshot,
   }: AttachSocketLifecycleParams) => {
+    // Ref local que indica si este socket llegó a abrir exitosamente.
+    // Se usa en onclose para distinguir "salida voluntaria tras conectarse"
+    // de "fallo antes de completar la conexión inicial".
+    let didOpen = false;
+
     socket.onopen = () => {
+      didOpen = true;
       setConnectionStatus("connected");
       setIsJoined(true);
       void syncRoomState(headers, resolvedSessionCode);
@@ -88,31 +92,37 @@ export function useInterviewRoomSocketLifecycle({
 
     socket.onclose = (closeEvent) => {
       setConnectionStatus("disconnected");
-      if (!isJoinedSnapshot) {
-        const reason = closeEvent.reason || "";
 
-        if (reason === "session_already_started") {
-          clearPersistedRejoinState();
-          setErrorMessage(
-            "Esta sesión ya ha finalizado o fue cerrada. Crea una nueva sesión para continuar.",
-          );
-        } else if (reason === "group_session_not_found") {
-          clearPersistedRejoinState();
-          setErrorMessage(
-            "El Session Code no existe o ya no está disponible. Verifica el código e intenta de nuevo.",
-          );
-        } else if (reason === "user_not_found") {
-          setErrorMessage(
-            "Tu usuario no fue encontrado. Vuelve a iniciar sesión.",
-          );
-        } else {
-          const detail = reason
-            ? ` (${reason})`
-            : closeEvent.code !== 1000 ? ` (código ${closeEvent.code})` : "";
-          setErrorMessage(
-            `No se pudo conectar a la sala${detail}. Verifica que el backend esté corriendo y que el Session Code sea válido.`,
-          );
-        }
+      // Si el socket se abrió exitosamente, el cierre fue voluntario (el
+      // usuario salió o la sesión terminó normalmente) — no mostrar error.
+      if (didOpen) {
+        return;
+      }
+
+      // El socket se cerró sin haber abierto: fue un fallo de conexión inicial.
+      const reason = closeEvent.reason || "";
+
+      if (reason === "session_already_started") {
+        clearPersistedRejoinState();
+        setErrorMessage(
+          "Esta sesión ya ha finalizado o fue cerrada. Crea una nueva sesión para continuar.",
+        );
+      } else if (reason === "group_session_not_found") {
+        clearPersistedRejoinState();
+        setErrorMessage(
+          "El Session Code no existe o ya no está disponible. Verifica el código e intenta de nuevo.",
+        );
+      } else if (reason === "user_not_found") {
+        setErrorMessage(
+          "Tu usuario no fue encontrado. Vuelve a iniciar sesión.",
+        );
+      } else {
+        const detail = reason
+          ? ` (${reason})`
+          : closeEvent.code !== 1000 ? ` (código ${closeEvent.code})` : "";
+        setErrorMessage(
+          `No se pudo conectar a la sala${detail}. Verifica que el backend esté corriendo y que el Session Code sea válido.`,
+        );
       }
     };
 
