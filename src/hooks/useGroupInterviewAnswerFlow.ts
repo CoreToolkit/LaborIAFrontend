@@ -70,6 +70,9 @@ export function useGroupInterviewAnswerFlow({
   const silenceMonitorRafRef = React.useRef<number | null>(null);
   const audioContextRef = React.useRef<AudioContext | null>(null);
 
+  /** Último activeRoundId que disparó el reset. Evita limpiar chunks cuando
+   * React re-renderiza con el mismo ID (p.ej. tras syncRoomState). */
+  const lastResetRoundIdRef = React.useRef<string | null>(undefined as unknown as string | null);
   // ─── Refs de funciones (acceso estable en closures del RAF) ──────────────
   const startRecordingFnRef = React.useRef<(() => void) | null>(null);
   const stopSubmitFnRef = React.useRef<(() => void) | null>(null);
@@ -359,7 +362,15 @@ export function useGroupInterviewAnswerFlow({
   }, [startAnswerRecording, stopAndSubmitAnswer]);
 
   // ─── Reset al cambiar de ronda ────────────────────────────────────────────
+  // Solo limpiamos cuando el ID de ronda cambia genuinamente.
+  // Si React re-renderiza con el MISMO activeRoundId (p.ej. porque syncRoomState
+  // llamó setActiveRoundId con el mismo valor), no borramos los chunks.
   React.useEffect(() => {
+    if (activeRoundId === lastResetRoundIdRef.current) {
+      return; // mismo ID → no es un cambio de ronda real
+    }
+    lastResetRoundIdRef.current = activeRoundId;
+
     clearTimersAndStreams();
     answerChunksRef.current = [];
 
