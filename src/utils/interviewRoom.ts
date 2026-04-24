@@ -69,6 +69,80 @@ export async function convertBlobToWav(blob: Blob): Promise<Blob> {
   return new Blob([audioBufferToWav(audioBuffer)], { type: "audio/wav" });
 }
 
+/**
+ * Une múltiples WAV blobs (PCM 16-bit) en un único WAV.
+ * Decodifica cada blob con AudioContext, concatena los samples de cada canal
+ * y re-escribe el header RIFF con la longitud total.
+ */
+export async function mergeWavBlobs(blobs: Blob[]): Promise<Blob> {
+  if (blobs.length === 0) {
+    throw new Error("mergeWavBlobs: lista de segmentos vacía");
+  }
+  if (blobs.length === 1) {
+    return blobs[0];
+  }
+
+  // Decodificar cada WAV a AudioBuffer
+  const audioBuffers: AudioBuffer[] = [];
+  for (const blob of blobs) {
+    const ab = await blob.arrayBuffer();
+    const ctx = new AudioContext();
+    const decoded = await ctx.decodeAudioData(ab);
+    await ctx.close();
+    audioBuffers.push(decoded);
+  }
+
+  const sampleRate = audioBuffers[0].sampleRate;
+  const numChannels = audioBuffers[0].numberOfChannels;
+  const totalLength = audioBuffers.reduce((sum, b) => sum + b.length, 0);
+
+  // Concatenar los Float32 de cada canal
+  const combinedData: Float32Array[] = [];
+  for (let ch = 0; ch < numChannels; ch++) {
+    const channelData = new Float32Array(totalLength);
+    let offset = 0;
+    for (const buf of audioBuffers) {
+      channelData.set(buf.getChannelData(ch), offset);
+      offset += buf.length;
+    }
+    combinedData.push(channelData);
+  }
+
+  // Escribir WAV PCM 16-bit con el header RIFF
+  const dataSize = totalLength * numChannels * 2;
+  const arrayBuffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(arrayBuffer);
+
+  const ws = (off: number, val: string) => {
+    for (let i = 0; i < val.length; i++) view.setUint8(off + i, val.charCodeAt(i));
+  };
+
+  ws(0, "RIFF");
+  view.setUint32(4, 36 + dataSize, true);
+  ws(8, "WAVE");
+  ws(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * numChannels * 2, true);
+  view.setUint16(32, numChannels * 2, true);
+  view.setUint16(34, 16, true);
+  ws(36, "data");
+  view.setUint32(40, dataSize, true);
+
+  let offset = 44;
+  for (let i = 0; i < totalLength; i++) {
+    for (let ch = 0; ch < numChannels; ch++) {
+      const sample = Math.max(-1, Math.min(1, combinedData[ch][i]));
+      view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+      offset += 2;
+    }
+  }
+
+  return new Blob([arrayBuffer], { type: "audio/wav" });
+}
+
 export const readPersistedRejoinState = (): PersistedRejoinState | null => {
   if (typeof window === "undefined") {
     return null;

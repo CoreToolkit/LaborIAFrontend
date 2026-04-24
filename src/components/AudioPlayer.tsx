@@ -124,79 +124,6 @@ export function AudioPlayer({ question, authToken, ttsStatus }: AudioPlayerProps
     }
   }, [audioUrl, generatedText, textToSpeak]);
 
-  const handleTextChange = React.useCallback((nextValue: string) => {
-    setTextToSpeak(nextValue);
-    setError(null);
-
-    if (generatedText !== nextValue.trim()) {
-      shouldPlayAfterLoadRef.current = false;
-      setGeneratedText(null);
-      replaceAudioUrl(null);
-
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.load();
-      }
-    }
-  }, [generatedText, replaceAudioUrl]);
-
-  const handleGenerateOrPlay = React.useCallback(async () => {
-    if (isLoading) {
-      return;
-    }
-
-    const normalizedText = textToSpeak.trim();
-    if (!normalizedText) {
-      setError("Debes ingresar un texto para generar audio.");
-      return;
-    }
-
-    if (audioUrl && generatedText === normalizedText) {
-      await playExistingAudio();
-      return;
-    }
-
-    if (!authToken) {
-      setError("Tu sesion no es valida. Inicia sesion nuevamente.");
-      return;
-    }
-
-    setIsLoading(true);
-    setError(null);
-    shouldPlayAfterLoadRef.current = true;
-
-    const currentRequest = requestSequenceRef.current + 1;
-    requestSequenceRef.current = currentRequest;
-
-    try {
-      const response = await generateInterviewQuestionAudio({ text: normalizedText }, authToken);
-
-      if (requestSequenceRef.current !== currentRequest) {
-        return;
-      }
-
-      const blob = createAudioBlob(response.audioBase64, response.mimeType);
-      const nextUrl = URL.createObjectURL(blob);
-      replaceAudioUrl(nextUrl);
-      setGeneratedText(normalizedText);
-    } catch (requestError) {
-      if (requestSequenceRef.current !== currentRequest) {
-        return;
-      }
-
-      shouldPlayAfterLoadRef.current = false;
-      const message =
-        requestError instanceof Error && requestError.message
-          ? requestError.message
-          : "No se pudo generar el audio de la pregunta.";
-      setError(message);
-    } finally {
-      if (requestSequenceRef.current === currentRequest) {
-        setIsLoading(false);
-      }
-    }
-  }, [audioUrl, authToken, generatedText, isLoading, playExistingAudio, replaceAudioUrl, textToSpeak]);
-
   const hasAudioForCurrentText = Boolean(audioUrl) && generatedText === textToSpeak.trim();
 
   return (
@@ -242,19 +169,7 @@ export function AudioPlayer({ question, authToken, ttsStatus }: AudioPlayerProps
         </div>
 
         <div className="flex w-full flex-col gap-2 lg:w-auto lg:min-w-64">
-          <Button
-            type="button"
-            onClick={() => void handleGenerateOrPlay()}
-            disabled={isLoading}
-            className="gap-2 bg-cyan-600 hover:bg-cyan-700"
-          >
-            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Volume2 className="h-4 w-4" />}
-            {isLoading
-              ? "Generando audio..."
-              : hasAudioForCurrentText
-                ? "Reproducir audio"
-                : "Generar audio"}
-          </Button>
+
 
           {hasAudioForCurrentText && (
             <p className="text-xs text-slate-500">
@@ -264,56 +179,13 @@ export function AudioPlayer({ question, authToken, ttsStatus }: AudioPlayerProps
         </div>
       </div>
 
-      <div className="mt-4">
-        <Label htmlFor={`audio-player-text-${question.id}`}>Texto a reproducir</Label>
-        <textarea
-          id={`audio-player-text-${question.id}`}
-          value={textToSpeak}
-          onChange={(event) => handleTextChange(event.target.value)}
-          rows={4}
-          className="mt-2 flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-slate-900 ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-          placeholder="Escribe el texto que quieres convertir a audio"
-        />
-        <p className="mt-2 text-xs text-slate-500">
-          Puedes editar el texto sugerido antes de generar el audio. Esta accion no genera preguntas nuevas.
-        </p>
-      </div>
+
 
       {error && (
         <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-3 text-sm text-red-700">
           <p>{error}</p>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="mt-3 gap-2"
-            onClick={() => void handleGenerateOrPlay()}
-            disabled={isLoading}
-          >
-            <RefreshCw className="h-4 w-4" />
-            Reintentar
-          </Button>
         </div>
       )}
-
-      <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
-        {hasAudioForCurrentText ? (
-          <audio
-            ref={audioRef}
-            controls
-            preload="none"
-            src={audioUrl || undefined}
-            className="w-full"
-            onError={() => setError(AUDIO_PLAYBACK_ERROR)}
-          >
-            Tu navegador no soporta reproduccion de audio.
-          </audio>
-        ) : (
-          <p className="text-sm text-slate-500">
-            Genera el audio cuando lo necesites. No se solicita TTS automaticamente.
-          </p>
-        )}
-      </div>
     </section>
   );
 }
