@@ -8,7 +8,7 @@ import { convertBlobToWav } from "@/utils/interviewRoom";
  * 0.003 es permisivo para micrófonos móviles que capturan a menor ganancia.
  * En desktop el RMS al hablar suele ser > 0.02, en móvil puede ser ~0.005.
  */
-const SILENCE_THRESHOLD = 0.003;
+const SILENCE_THRESHOLD = 0.01;
 /** Milisegundos de silencio continuo antes de detener la grabación. */
 const SILENCE_DURATION_MS = 5_000;
 /** Tiempo al inicio de la grabación donde el silencio no cuenta. */
