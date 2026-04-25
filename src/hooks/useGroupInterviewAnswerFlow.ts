@@ -4,8 +4,11 @@ import { getAccessToken } from "@/utils/session";
 import { convertBlobToWav } from "@/utils/interviewRoom";
 
 // ─── Constantes de grabación ────────────────────────────────────────────────
-/** RMS por debajo del cual se considera silencio (≈ -40 dBFS). */
-const SILENCE_THRESHOLD = 0.01;
+/** RMS por debajo del cual se considera silencio.
+ * 0.003 es permisivo para micrófonos móviles que capturan a menor ganancia.
+ * En desktop el RMS al hablar suele ser > 0.02, en móvil puede ser ~0.005.
+ */
+const SILENCE_THRESHOLD = 0.003;
 /** Milisegundos de silencio continuo antes de detener la grabación. */
 const SILENCE_DURATION_MS = 5_000;
 /** Tiempo al inicio de la grabación donde el silencio no cuenta. */
@@ -136,6 +139,13 @@ export function useGroupInterviewAnswerFlow({
     // ── Detección de silencio via AnalyserNode + RAF ─────────────────────
     const audioCtx = new AudioContext();
     audioContextRef.current = audioCtx;
+
+    // En móvil el AudioContext puede quedar en estado 'suspended' si no fue
+    // creado dentro de un gesto directo del usuario. Intentamos resumirlo
+    // de inmediato; en Android Chrome funciona, en iOS actúa como noop
+    // (el fallback del RAF loop cubre ese caso).
+    void audioCtx.resume().catch(() => undefined);
+
     const analyser = audioCtx.createAnalyser();
     analyser.fftSize = 2048;
     const source = audioCtx.createMediaStreamSource(clonedStream);
@@ -148,10 +158,21 @@ export function useGroupInterviewAnswerFlow({
 
     const monitorSilence = (timestamp: number) => {
       if (!audioContextRef.current) {
-        return; // AudioContext cerrado: el loop ya no es necesario
+        return;
       }
 
-      const delta = lastTimestamp !== null ? timestamp - lastTimestamp : 16;
+      // Si el AudioContext está suspendido (frecuente en mobile antes de
+      // que el browser lo active), intentar resumirlo y no contar silencio.
+      if (audioContextRef.current.state === "suspended") {
+        void audioContextRef.current.resume().catch(() => undefined);
+        silenceMonitorRafRef.current = requestAnimationFrame(monitorSilence);
+        return;
+      }
+
+      // Capear delta a 200ms para evitar que el throttling del browser móvil
+      // provoque un salto enorme en silenceAccumMs en un solo frame.
+      const rawDelta = lastTimestamp !== null ? timestamp - lastTimestamp : 16;
+      const delta = Math.min(rawDelta, 200);
       lastTimestamp = timestamp;
 
       // Grace period: no contar silencio durante los primeros segundos
