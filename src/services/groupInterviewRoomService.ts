@@ -8,6 +8,7 @@ type GroupSessionResponse = {
 export type GroupSessionDetailResponse = {
   host_id: number;
   status: string;
+  my_interview_session_id?: number | null;
 };
 
 type AuthMeResponse = {
