@@ -8,6 +8,7 @@ import {
   Heart,
   Zap,
   TrendingUp,
+  FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DashboardLayout } from "@/components/Layout";
@@ -29,34 +30,6 @@ const clampPercentage = (value: number): number => {
   return Math.max(0, Math.min(100, Math.round(value)));
 };
 
-const countFilledFields = (values: Array<string | undefined | null>): number => {
-  return values.filter((value) => typeof value === "string" && value.trim().length > 0).length;
-};
-
-const calculateProfileReadiness = (profile: ReturnType<typeof useProfile>["profile"]): number => {
-  if (!profile) return 0;
-
-  const coreFields = countFilledFields([
-    profile.nombre,
-    profile.email,
-    profile.carrera,
-    profile.universidad,
-    profile.telefono,
-    profile.ubicacion,
-    profile.bio,
-    profile.fechaGraduacion,
-    profile.nivelIngles,
-  ]);
-
-  const coreScore = (coreFields / 9) * 100;
-  const experienceScore = profile.experiencias.length === 0 ? 0 : Math.min(100, 55 + (profile.experiencias.length - 1) * 15);
-  const skillsScore = profile.habilidades.length === 0 ? 0 : Math.min(100, 45 + (profile.habilidades.length - 1) * 10);
-  const preferencesScore = profile.preferencias ? 100 : 0;
-
-  return clampPercentage(
-    coreScore * 0.4 + experienceScore * 0.3 + skillsScore * 0.2 + preferencesScore * 0.1
-  );
-};
 
 const calculateMatchAverage = (recommendations: RoleRecommendation[]): number => {
   if (recommendations.length === 0) return 0;
@@ -73,6 +46,37 @@ export function DashboardContent() {
   const [recommendations, setRecommendations] = React.useState<RoleRecommendation[]>([]);
   const [isRecommendationsLoading, setIsRecommendationsLoading] = React.useState(true);
   const [recommendationsError, setRecommendationsError] = React.useState<string | null>(null);
+  const [lastReportId, setLastReportId] = React.useState<string | null>(null);
+
+  const readLastReportId = React.useCallback((): string | null => {
+    if (typeof window === "undefined") {
+      return null;
+    }
+
+    const reportId = sessionStorage.getItem("last_interview_report_id");
+    if (reportId && reportId.trim()) {
+      return reportId.trim();
+    }
+
+    return null;
+  }, []);
+
+  React.useEffect(() => {
+    try {
+      setLastReportId(readLastReportId());
+    } catch {
+      // ignore
+    }
+  }, [readLastReportId]);
+
+  React.useEffect(() => {
+    const handleStorage = () => {
+      setLastReportId(readLastReportId());
+    };
+
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, [readLastReportId]);
 
   const shouldOpenOnboarding = React.useMemo(() => {
     if (!profile) return false;
@@ -138,10 +142,6 @@ export function DashboardContent() {
     .slice()
     .sort((a, b) => b.total_score - a.total_score)[0];
   const averageMatch = calculateMatchAverage(recommendations);
-  const profileReadiness = calculateProfileReadiness(profile);
-  const employabilityScore = clampPercentage(averageMatch * 0.6 + profileReadiness * 0.4);
-  const technicalSkillsScore = clampPercentage(averageMatch * 0.7 + profileReadiness * 0.3);
-  const softSkillsScore = clampPercentage(profileReadiness * 0.75 + averageMatch * 0.25);
 
   if (isProfileLoading) {
     return (
@@ -237,21 +237,32 @@ export function DashboardContent() {
                     label: "Entrar",
                     onClick: handleOpenInterviewRoom,
                   }}
-                />
+                >
+                  {lastReportId && (
+                    <button
+                      type="button"
+                      onClick={() => router.push(`/interview-report/${lastReportId}`)}
+                      className="flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-800 transition-colors"
+                    >
+                      <FileText className="h-3.5 w-3.5" />
+                      Ver último reporte
+                    </button>
+                  )}
+                </DashboardCard>
 
                 {/* Métricas de Progreso */}
                 <DashboardCard
                   icon={TrendingUp}
                   iconBgColor="bg-purple-50"
-                  title="Métricas de Progreso"
-                  description="Sigue tu evolucion"
+                  title="Historial de Reportes"
+                  description="Revisa todos tus reportes de entrevista"
                   metric={{
-                    label: "Progreso general",
-                    value: "72%",
+                    label: "Reportes guardados",
+                    value: "Ver historial",
                   }}
                   action={{
-                    label: "Ver detalles",
-                    onClick: () => router.push("/progress"),
+                    label: "Abrir historial",
+                    onClick: () => router.push("/interview-history"),
                   }}
                 />
               </div>
@@ -316,11 +327,7 @@ export function DashboardContent() {
                 </section>
 
                 <div>
-                  <EmployabilityScore
-                    score={employabilityScore}
-                    technicalSkills={technicalSkillsScore}
-                    softSkills={softSkillsScore}
-                  />
+                  <EmployabilityScore />
                 </div>
               </div>
             </div>

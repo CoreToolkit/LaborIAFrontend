@@ -98,6 +98,7 @@ function InterviewPageContent() {
     const [currentQuestion, setCurrentQuestion] = React.useState<AudioPlayerQuestion | null>(null);
     const [isHost, setIsHost] = React.useState(false);
     const [runningAction, setRunningAction] = React.useState<GroupInterviewAction | null>(null);
+    const [sessionNumericId, setSessionNumericId] = React.useState<number | null>(null);
 
     const socketRef = React.useRef<WebSocket | null>(null);
     const localStreamRef = React.useRef<MediaStream | null>(null);
@@ -610,6 +611,9 @@ function InterviewPageContent() {
             setDisplayName(safeDisplayName);
             setIsHost(sessionDetail.host_id === resolvedUserId);
             setSessionStatus(sessionStatus);
+            if (sessionDetail.my_interview_session_id && Number.isFinite(sessionDetail.my_interview_session_id)) {
+                setSessionNumericId(sessionDetail.my_interview_session_id);
+            }
 
             const encodedRoom = encodeURIComponent(resolvedSessionCode);
             const encodedUser = encodeURIComponent(sessionUserId);
@@ -737,6 +741,24 @@ function InterviewPageContent() {
     }, [roleDisplayName, roleId, roleNameFromQuery]);
 
     const activeQuestion = currentQuestion || fallbackQuestion;
+
+    React.useEffect(() => {
+        if (sessionStatus !== "closed" || !isJoined || !sessionNumericId) {
+            return;
+        }
+
+        try {
+            sessionStorage.setItem("last_interview_report_id", String(sessionNumericId));
+        } catch {
+            // ignore
+        }
+
+        const timer = window.setTimeout(() => {
+            void router.push(`/interview-report/${sessionNumericId}`);
+        }, 1500);
+
+        return () => window.clearTimeout(timer);
+    }, [sessionStatus, isJoined, sessionNumericId, router]);
 
     return (
         <>
