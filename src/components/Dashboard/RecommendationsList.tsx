@@ -1,11 +1,8 @@
-import React from "react";
 import { AlertCircle, RefreshCw, Briefcase, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MatchProgressBar } from "@/components/MatchProgressBar";
 import { SkillGapBadge } from "@/components/SkillGapBadge";
-import { getRecommendations } from "@/services/matchingService";
 import { RoleRecommendation } from "@/types/matching";
-import { getAccessToken } from "@/utils/session";
 import { cn } from "@/utils/cn";
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -35,20 +32,10 @@ function RoleCard({ role }: { role: RoleRecommendation }) {
         <div className="flex-1 min-w-0">
           <h4 className="text-sm font-semibold text-slate-800 truncate">{role.role_name}</h4>
           <div className="flex flex-wrap gap-1.5 mt-1.5">
-            <span
-              className={cn(
-                "inline-block rounded-full border px-2 py-0.5 text-xs font-medium",
-                CATEGORY_STYLES[role.category] ?? "bg-slate-50 text-slate-600 border-slate-200"
-              )}
-            >
+            <span className={cn("inline-block rounded-full border px-2 py-0.5 text-xs font-medium", CATEGORY_STYLES[role.category] ?? "bg-slate-50 text-slate-600 border-slate-200")}>
               {CATEGORY_LABELS[role.category] ?? role.category}
             </span>
-            <span
-              className={cn(
-                "inline-block rounded-full border px-2 py-0.5 text-xs font-medium capitalize",
-                SENIORITY_STYLES[role.seniority_level] ?? "bg-slate-50 text-slate-600 border-slate-200"
-              )}
-            >
+            <span className={cn("inline-block rounded-full border px-2 py-0.5 text-xs font-medium capitalize", SENIORITY_STYLES[role.seniority_level] ?? "bg-slate-50 text-slate-600 border-slate-200")}>
               {role.seniority_level}
             </span>
             <span className="inline-block rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-600">
@@ -70,9 +57,7 @@ function RoleCard({ role }: { role: RoleRecommendation }) {
         <div>
           <p className="text-xs font-medium text-slate-400 mb-2">Skills a reforzar</p>
           <div className="flex flex-wrap gap-1.5">
-            {topGaps.map((gap) => (
-              <SkillGapBadge key={gap.skill_name} gap={gap} />
-            ))}
+            {topGaps.map((gap) => <SkillGapBadge key={gap.skill_name} gap={gap} />)}
           </div>
         </div>
       )}
@@ -119,40 +104,14 @@ function EmptyState() {
   );
 }
 
-export function RecommendationsList() {
-  const [data, setData] = React.useState<RoleRecommendation[]>([]);
-  const [isLoading, setIsLoading] = React.useState(true);
-  const [error, setError] = React.useState<string | null>(null);
+interface RecommendationsListProps {
+  data: RoleRecommendation[];
+  isLoading: boolean;
+  error: string | null;
+  onRetry: () => void;
+}
 
-  const load = React.useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-
-    const token = getAccessToken();
-    if (!token) {
-      setError("Sesión expirada. Inicia sesión nuevamente.");
-      setIsLoading(false);
-      return;
-    }
-
-    try {
-      const result = await getRecommendations(token);
-      setData(result);
-    } catch (err) {
-      setError(
-        err instanceof Error && err.message.trim()
-          ? err.message.trim()
-          : "No se pudieron cargar las recomendaciones."
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  React.useEffect(() => {
-    void load();
-  }, [load]);
-
+export function RecommendationsList({ data, isLoading, error, onRetry }: RecommendationsListProps) {
   if (isLoading) return <RecommendationsListSkeleton />;
 
   if (error) {
@@ -162,12 +121,7 @@ export function RecommendationsList() {
           <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
           <span>{error}</span>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          className="border-red-200 text-red-600 hover:bg-red-100"
-          onClick={() => void load()}
-        >
+        <Button variant="outline" size="sm" className="border-red-200 text-red-600 hover:bg-red-100" onClick={onRetry}>
           <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
           Reintentar
         </Button>
@@ -181,17 +135,13 @@ export function RecommendationsList() {
         <Briefcase className="h-4 w-4 text-slate-400" />
         <h3 className="text-base font-semibold text-slate-800">Roles Recomendados</h3>
       </div>
-      <p className="text-xs text-slate-400 mb-5">
-        Basado en tu perfil, skills y experiencia
-      </p>
+      <p className="text-xs text-slate-400 mb-5">Basado en tu perfil, skills y experiencia</p>
 
       {data.length === 0 ? (
         <EmptyState />
       ) : (
         <div className="space-y-4">
-          {data.map((role) => (
-            <RoleCard key={role.role_id} role={role} />
-          ))}
+          {data.map((role) => <RoleCard key={role.role_id} role={role} />)}
         </div>
       )}
     </div>

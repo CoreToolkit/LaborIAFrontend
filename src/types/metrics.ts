@@ -11,6 +11,12 @@ export interface EmployabilityScoreResponse {
   motivational_message: string | null;
 }
 
+export interface TimelinePoint {
+  period: string;
+  avg_score: number;
+  count: number;
+}
+
 export interface UserMetricsResponse {
   avg_score: number;
   score_by_skill: Record<string, number>;

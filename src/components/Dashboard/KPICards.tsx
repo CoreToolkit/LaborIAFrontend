@@ -1,9 +1,7 @@
 import React from "react";
 import { TrendingUp, Mic, Trophy, AlertTriangle, RefreshCw, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { getUserMetrics } from "@/services/metricsService";
 import { UserMetricsResponse } from "@/types/metrics";
-import { getAccessToken } from "@/utils/session";
 
 interface KPIItem {
   label: string;
@@ -17,12 +15,8 @@ interface KPIItem {
 
 function deriveKPIs(data: UserMetricsResponse): KPIItem[] {
   const skills = Object.entries(data.score_by_skill);
-  const strongest = skills.length
-    ? skills.reduce((a, b) => (b[1] > a[1] ? b : a))
-    : null;
-  const weakest = skills.length
-    ? skills.reduce((a, b) => (b[1] < a[1] ? b : a))
-    : null;
+  const strongest = skills.length ? skills.reduce((a, b) => (b[1] > a[1] ? b : a)) : null;
+  const weakest = skills.length ? skills.reduce((a, b) => (b[1] < a[1] ? b : a)) : null;
 
   return [
     {
@@ -92,46 +86,18 @@ function KPICard({ label, value, sub, icon, accent, bg, iconBg }: KPIItem) {
   );
 }
 
-export function KPICards() {
-  const [data, setData] = React.useState<UserMetricsResponse | null>(null);
-  const [isLoading, setIsLoading] = React.useState(true);
-  const [error, setError] = React.useState<string | null>(null);
+interface KPICardsProps {
+  data: UserMetricsResponse | null;
+  isLoading: boolean;
+  error: string | null;
+  onRetry: () => void;
+}
 
-  const load = React.useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-
-    const token = getAccessToken();
-    if (!token) {
-      setError("Sesión expirada. Inicia sesión nuevamente.");
-      setIsLoading(false);
-      return;
-    }
-
-    try {
-      const result = await getUserMetrics(token);
-      setData(result);
-    } catch (err) {
-      setError(
-        err instanceof Error && err.message.trim()
-          ? err.message.trim()
-          : "No se pudieron cargar las métricas."
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  React.useEffect(() => {
-    void load();
-  }, [load]);
-
+export function KPICards({ data, isLoading, error, onRetry }: KPICardsProps) {
   if (isLoading) {
     return (
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <KPICardSkeleton key={i} />
-        ))}
+        {Array.from({ length: 4 }).map((_, i) => <KPICardSkeleton key={i} />)}
       </div>
     );
   }
@@ -143,12 +109,7 @@ export function KPICards() {
           <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
           <span>{error}</span>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          className="border-red-200 text-red-600 hover:bg-red-100"
-          onClick={() => void load()}
-        >
+        <Button variant="outline" size="sm" className="border-red-200 text-red-600 hover:bg-red-100" onClick={onRetry}>
           <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
           Reintentar
         </Button>
@@ -158,13 +119,9 @@ export function KPICards() {
 
   if (!data) return null;
 
-  const kpis = deriveKPIs(data);
-
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      {kpis.map((kpi) => (
-        <KPICard key={kpi.label} {...kpi} />
-      ))}
+      {deriveKPIs(data).map((kpi) => <KPICard key={kpi.label} {...kpi} />)}
     </div>
   );
 }

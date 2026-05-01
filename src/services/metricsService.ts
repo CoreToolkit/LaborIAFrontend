@@ -1,4 +1,4 @@
-import { EmployabilityScoreResponse, UserMetricsResponse } from "@/types/metrics";
+import { EmployabilityScoreResponse, TimelinePoint, UserMetricsResponse } from "@/types/metrics";
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
@@ -49,6 +49,40 @@ const parseEmployabilityScore = (payload: unknown): EmployabilityScoreResponse =
         ? payload.motivational_message.trim()
         : null,
   };
+};
+
+const parseTimeline = (payload: unknown): TimelinePoint[] => {
+  if (!Array.isArray(payload)) return [];
+  return payload
+    .filter(isObject)
+    .map((item) => ({
+      period: typeof item.period === "string" ? item.period : "",
+      avg_score: clamp(toNumber(item.avg_score)),
+      count: Math.max(0, Math.floor(toNumber(item.count))),
+    }))
+    .filter((p) => p.period !== "");
+};
+
+export const getMetricsTimeline = async (
+  token: string,
+  granularity: "week" | "month" = "week"
+): Promise<TimelinePoint[]> => {
+  const response = await fetch(`/api/metrics/timeline?granularity=${granularity}`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      await parseErrorMessage(response, "No se pudo cargar el historial de progreso.")
+    );
+  }
+
+  const payload = (await response.json()) as unknown;
+  return parseTimeline(payload);
 };
 
 const parseUserMetrics = (payload: unknown): UserMetricsResponse => {

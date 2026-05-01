@@ -1,4 +1,3 @@
-import React from "react";
 import {
   RadarChart,
   Radar,
@@ -10,9 +9,7 @@ import {
 } from "recharts";
 import { AlertCircle, RefreshCw, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { getUserMetrics } from "@/services/metricsService";
 import { UserMetricsResponse } from "@/types/metrics";
-import { getAccessToken } from "@/utils/session";
 
 const SKILL_LABELS: Record<string, string> = {
   correctness: "Corrección",
@@ -39,13 +36,13 @@ function toRadarData(scoreBySkill: Record<string, number>): RadarPoint[] {
   }));
 }
 
-interface TooltipProps {
+interface TooltipPayload {
   active?: boolean;
   payload?: { value: number }[];
   label?: string;
 }
 
-function CustomTooltip({ active, payload, label }: TooltipProps) {
+function CustomTooltip({ active, payload, label }: TooltipPayload) {
   if (!active || !payload?.length) return null;
   return (
     <div className="rounded-xl border border-slate-100 bg-white px-3 py-2 shadow-lg text-sm">
@@ -81,40 +78,14 @@ function EmptyState() {
   );
 }
 
-export function SkillRadarChart() {
-  const [data, setData] = React.useState<UserMetricsResponse | null>(null);
-  const [isLoading, setIsLoading] = React.useState(true);
-  const [error, setError] = React.useState<string | null>(null);
+interface SkillRadarChartProps {
+  data: UserMetricsResponse | null;
+  isLoading: boolean;
+  error: string | null;
+  onRetry: () => void;
+}
 
-  const load = React.useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-
-    const token = getAccessToken();
-    if (!token) {
-      setError("Sesión expirada. Inicia sesión nuevamente.");
-      setIsLoading(false);
-      return;
-    }
-
-    try {
-      const result = await getUserMetrics(token);
-      setData(result);
-    } catch (err) {
-      setError(
-        err instanceof Error && err.message.trim()
-          ? err.message.trim()
-          : "No se pudo cargar el radar de skills."
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  React.useEffect(() => {
-    void load();
-  }, [load]);
-
+export function SkillRadarChart({ data, isLoading, error, onRetry }: SkillRadarChartProps) {
   if (isLoading) return <SkillRadarChartSkeleton />;
 
   if (error) {
@@ -124,12 +95,7 @@ export function SkillRadarChart() {
           <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
           <span>{error}</span>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          className="border-red-200 text-red-600 hover:bg-red-100"
-          onClick={() => void load()}
-        >
+        <Button variant="outline" size="sm" className="border-red-200 text-red-600 hover:bg-red-100" onClick={onRetry}>
           <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
           Reintentar
         </Button>
@@ -143,9 +109,7 @@ export function SkillRadarChart() {
   return (
     <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
       <h3 className="text-base font-semibold text-slate-800">Radar de Skills</h3>
-      <p className="text-xs text-slate-400 mt-0.5 mb-4">
-        Score promedio por habilidad evaluada
-      </p>
+      <p className="text-xs text-slate-400 mt-0.5 mb-4">Score promedio por habilidad evaluada</p>
 
       {!hasData ? (
         <EmptyState />
@@ -153,25 +117,9 @@ export function SkillRadarChart() {
         <ResponsiveContainer width="100%" height={280}>
           <RadarChart cx="50%" cy="50%" outerRadius="75%" data={radarData}>
             <PolarGrid stroke="#e2e8f0" />
-            <PolarAngleAxis
-              dataKey="skill"
-              tick={{ fill: "#64748b", fontSize: 12, fontWeight: 500 }}
-            />
-            <PolarRadiusAxis
-              angle={90}
-              domain={[0, 100]}
-              tickCount={5}
-              tick={{ fill: "#94a3b8", fontSize: 10 }}
-            />
-            <Radar
-              name="Score"
-              dataKey="score"
-              stroke="#3b82f6"
-              fill="#3b82f6"
-              fillOpacity={0.2}
-              strokeWidth={2}
-              dot={{ r: 4, fill: "#3b82f6", strokeWidth: 0 }}
-            />
+            <PolarAngleAxis dataKey="skill" tick={{ fill: "#64748b", fontSize: 12, fontWeight: 500 }} />
+            <PolarRadiusAxis angle={90} domain={[0, 100]} tickCount={5} tick={{ fill: "#94a3b8", fontSize: 10 }} />
+            <Radar name="Score" dataKey="score" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.2} strokeWidth={2} dot={{ r: 4, fill: "#3b82f6", strokeWidth: 0 }} />
             <Tooltip content={<CustomTooltip />} />
           </RadarChart>
         </ResponsiveContainer>

@@ -1,10 +1,7 @@
-import React from "react";
 import Link from "next/link";
 import { AlertCircle, RefreshCw, Clock, ChevronRight, Activity } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { getEvaluationHistory } from "@/services/interviewReportService";
 import { EvaluationHistoryItem } from "@/types/interviewReport";
-import { getAccessToken } from "@/utils/session";
 import { cn } from "@/utils/cn";
 
 function relativeTime(dateStr: string | null): string {
@@ -42,49 +39,31 @@ function truncate(text: string | null, max = 80): string {
 
 function ActivityItem({ item }: { item: EvaluationHistoryItem }) {
   const content = (
-    <div
-      className={cn(
-        "flex items-center gap-4 rounded-xl border p-4 transition-colors",
-        item.session_id
-          ? "hover:bg-slate-50 cursor-pointer"
-          : "cursor-default",
-        "border-slate-100 bg-white"
-      )}
-    >
-      <div
-        className={cn(
-          "flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full border text-sm font-bold",
-          scoreBg(item.score),
-          scoreColor(item.score)
-        )}
-      >
+    <div className={cn(
+      "flex items-center gap-4 rounded-xl border p-4 transition-colors border-slate-100 bg-white",
+      item.session_id ? "hover:bg-slate-50 cursor-pointer" : "cursor-default"
+    )}>
+      <div className={cn(
+        "flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full border text-sm font-bold",
+        scoreBg(item.score),
+        scoreColor(item.score)
+      )}>
         {item.score !== null ? Math.round(item.score) : "—"}
       </div>
-
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-slate-700 truncate">
-          {truncate(item.question_text)}
-        </p>
+        <p className="text-sm font-medium text-slate-700 truncate">{truncate(item.question_text)}</p>
         <div className="flex items-center gap-1 mt-0.5 text-xs text-slate-400">
           <Clock className="h-3 w-3" />
           {relativeTime(item.completed_at)}
         </div>
       </div>
-
-      {item.session_id && (
-        <ChevronRight className="h-4 w-4 flex-shrink-0 text-slate-300" />
-      )}
+      {item.session_id && <ChevronRight className="h-4 w-4 flex-shrink-0 text-slate-300" />}
     </div>
   );
 
   if (item.session_id) {
-    return (
-      <Link href={`/interview-report/${item.session_id}`} className="block">
-        {content}
-      </Link>
-    );
+    return <Link href={`/interview-report/${item.session_id}`} className="block">{content}</Link>;
   }
-
   return content;
 }
 
@@ -122,40 +101,14 @@ function EmptyState() {
   );
 }
 
-export function RecentActivityFeed() {
-  const [items, setItems] = React.useState<EvaluationHistoryItem[]>([]);
-  const [isLoading, setIsLoading] = React.useState(true);
-  const [error, setError] = React.useState<string | null>(null);
+interface RecentActivityFeedProps {
+  data: EvaluationHistoryItem[];
+  isLoading: boolean;
+  error: string | null;
+  onRetry: () => void;
+}
 
-  const load = React.useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-
-    const token = getAccessToken();
-    if (!token) {
-      setError("Sesión expirada. Inicia sesión nuevamente.");
-      setIsLoading(false);
-      return;
-    }
-
-    try {
-      const result = await getEvaluationHistory(token, 5);
-      setItems(result.items);
-    } catch (err) {
-      setError(
-        err instanceof Error && err.message.trim()
-          ? err.message.trim()
-          : "No se pudo cargar la actividad reciente."
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  React.useEffect(() => {
-    void load();
-  }, [load]);
-
+export function RecentActivityFeed({ data, isLoading, error, onRetry }: RecentActivityFeedProps) {
   if (isLoading) return <RecentActivityFeedSkeleton />;
 
   if (error) {
@@ -165,12 +118,7 @@ export function RecentActivityFeed() {
           <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
           <span>{error}</span>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          className="border-red-200 text-red-600 hover:bg-red-100"
-          onClick={() => void load()}
-        >
+        <Button variant="outline" size="sm" className="border-red-200 text-red-600 hover:bg-red-100" onClick={onRetry}>
           <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
           Reintentar
         </Button>
@@ -186,13 +134,11 @@ export function RecentActivityFeed() {
       </div>
       <p className="text-xs text-slate-400 mb-5">Últimas 5 evaluaciones completadas</p>
 
-      {items.length === 0 ? (
+      {data.length === 0 ? (
         <EmptyState />
       ) : (
         <div className="space-y-3">
-          {items.map((item) => (
-            <ActivityItem key={item.evaluation_id} item={item} />
-          ))}
+          {data.map((item) => <ActivityItem key={item.evaluation_id} item={item} />)}
         </div>
       )}
     </div>

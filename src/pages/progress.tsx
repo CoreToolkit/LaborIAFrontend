@@ -1,3 +1,4 @@
+import React from "react";
 import Head from "next/head";
 import { DashboardLayout } from "@/components/Layout";
 import PrivateRoute from "@/components/PrivateRoute";
@@ -7,8 +8,45 @@ import {
   RecommendationsList,
   RecentActivityFeed,
 } from "@/components/Dashboard";
+import { getEvaluationHistory } from "@/services/interviewReportService";
+import { EvaluationHistoryItem } from "@/types/interviewReport";
+import { getAccessToken } from "@/utils/session";
+import { useProgressDashboard } from "@/hooks/useProgressDashboard";
 
 function ProgressContent() {
+  const { metrics, recommendations, isLoading, error, refetch } = useProgressDashboard();
+
+  const [activity, setActivity] = React.useState<EvaluationHistoryItem[]>([]);
+  const [activityLoading, setActivityLoading] = React.useState(true);
+  const [activityError, setActivityError] = React.useState<string | null>(null);
+
+  const fetchActivity = React.useCallback(async () => {
+    setActivityLoading(true);
+    setActivityError(null);
+    const token = getAccessToken();
+    if (!token) {
+      setActivityError("Sesión expirada. Inicia sesión nuevamente.");
+      setActivityLoading(false);
+      return;
+    }
+    try {
+      const result = await getEvaluationHistory(token, 5);
+      setActivity(result.items);
+    } catch (err) {
+      setActivityError(
+        err instanceof Error && err.message.trim()
+          ? err.message.trim()
+          : "No se pudo cargar la actividad reciente."
+      );
+    } finally {
+      setActivityLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    void fetchActivity();
+  }, [fetchActivity]);
+
   return (
     <>
       <Head>
@@ -20,37 +58,50 @@ function ProgressContent() {
       <DashboardLayout>
         <div className="flex-1 min-h-0">
 
-          {/* Header */}
           <section className="border-b border-slate-200 bg-gradient-to-r from-blue-50 to-blue-100 px-6 py-8">
             <div className="max-w-7xl mx-auto">
-              <h1 className="text-3xl font-bold text-slate-900 mb-1">
-                Métricas de Progreso
-              </h1>
+              <h1 className="text-3xl font-bold text-slate-900 mb-1">Métricas de Progreso</h1>
               <p className="text-slate-500 text-sm">
                 Sigue tu evolución y mira cómo mejora tu empleabilidad.
               </p>
             </div>
           </section>
 
-          {/* Main content */}
           <main className="px-4 py-6 sm:px-6">
             <div className="max-w-7xl mx-auto space-y-6">
 
-              {/* Row 1 — KPI Cards: full width, grid interno 1→2→4 cols */}
-              <KPICards />
+              <KPICards
+                data={metrics}
+                isLoading={isLoading}
+                error={error.metrics}
+                onRetry={refetch}
+              />
 
-              {/* Row 2 — RadarChart + Activity Feed */}
               <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-12">
                 <div className="lg:col-span-5">
-                  <SkillRadarChart />
+                  <SkillRadarChart
+                    data={metrics}
+                    isLoading={isLoading}
+                    error={error.metrics}
+                    onRetry={refetch}
+                  />
                 </div>
                 <div className="lg:col-span-7">
-                  <RecentActivityFeed />
+                  <RecentActivityFeed
+                    data={activity}
+                    isLoading={activityLoading}
+                    error={activityError}
+                    onRetry={() => void fetchActivity()}
+                  />
                 </div>
               </div>
 
-              {/* Row 3 — Recommendations: full width */}
-              <RecommendationsList />
+              <RecommendationsList
+                data={recommendations}
+                isLoading={isLoading}
+                error={error.recommendations}
+                onRetry={refetch}
+              />
 
             </div>
           </main>
