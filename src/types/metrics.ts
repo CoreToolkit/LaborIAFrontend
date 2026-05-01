@@ -10,3 +10,10 @@ export interface EmployabilityScoreResponse {
   last_updated: string | null;
   motivational_message: string | null;
 }
+
+export interface UserMetricsResponse {
+  avg_score: number;
+  score_by_skill: Record<string, number>;
+  total_interviews: number;
+  last_updated: string | null;
+}

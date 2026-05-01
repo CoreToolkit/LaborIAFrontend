@@ -1,4 +1,4 @@
-import { EmployabilityScoreResponse } from "@/types/metrics";
+import { EmployabilityScoreResponse, UserMetricsResponse } from "@/types/metrics";
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
@@ -49,6 +49,45 @@ const parseEmployabilityScore = (payload: unknown): EmployabilityScoreResponse =
         ? payload.motivational_message.trim()
         : null,
   };
+};
+
+const parseUserMetrics = (payload: unknown): UserMetricsResponse => {
+  if (!isObject(payload)) {
+    throw new Error("Respuesta inesperada del servidor.");
+  }
+
+  const rawSkills = isObject(payload.score_by_skill) ? payload.score_by_skill : {};
+  const score_by_skill: Record<string, number> = {};
+  for (const [key, val] of Object.entries(rawSkills)) {
+    score_by_skill[key] = clamp(toNumber(val));
+  }
+
+  return {
+    avg_score: clamp(toNumber(payload.avg_score)),
+    score_by_skill,
+    total_interviews: Math.max(0, Math.floor(toNumber(payload.total_interviews))),
+    last_updated:
+      typeof payload.last_updated === "string" ? payload.last_updated : null,
+  };
+};
+
+export const getUserMetrics = async (token: string): Promise<UserMetricsResponse> => {
+  const response = await fetch("/api/metrics/user", {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      await parseErrorMessage(response, "No se pudo cargar las métricas del usuario.")
+    );
+  }
+
+  const payload = (await response.json()) as unknown;
+  return parseUserMetrics(payload);
 };
 
 export const getEmployabilityScore = async (

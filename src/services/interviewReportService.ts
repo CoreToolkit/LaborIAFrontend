@@ -1,4 +1,8 @@
-import { InterviewReportResponse, InterviewReportsHistoryResponse } from "@/types/interviewReport";
+import {
+  EvaluationHistoryResponse,
+  InterviewReportResponse,
+  InterviewReportsHistoryResponse,
+} from "@/types/interviewReport";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "";
 
@@ -75,4 +79,29 @@ export const getInterviewReportsHistory = async (
 
   const payload = (await response.json()) as unknown;
   return Array.isArray(payload) ? (payload as InterviewReportsHistoryResponse) : [];
+};
+
+export const getEvaluationHistory = async (
+  token: string,
+  limit = 5
+): Promise<EvaluationHistoryResponse> => {
+  const response = await fetch(`/api/evaluations/history?limit=${limit}&offset=0`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      await parseErrorMessage(response, "No se pudo cargar el historial de evaluaciones.")
+    );
+  }
+
+  const payload = (await response.json()) as unknown;
+  if (isObject(payload) && Array.isArray(payload.items)) {
+    return payload as unknown as EvaluationHistoryResponse;
+  }
+  return { items: [], total: 0, limit, offset: 0 };
 };

@@ -53,3 +53,19 @@ export interface InterviewReportSummary {
 }
 
 export type InterviewReportsHistoryResponse = InterviewReportSummary[];
+
+export interface EvaluationHistoryItem {
+  evaluation_id: string;
+  session_id: number | null;
+  question_text: string | null;
+  score: number | null;
+  feedback: string | null;
+  completed_at: string | null;
+}
+
+export interface EvaluationHistoryResponse {
+  items: EvaluationHistoryItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
