@@ -18,6 +18,7 @@ import {
   getRecommendations,
   recalculateRecommendations,
 } from "@/services/matchingService";
+import { getInterviewReportsHistory } from "@/services/interviewReportService";
 import { RoleRecommendation } from "@/types/matching";
 import {
   hasSkippedOnboarding,
@@ -46,37 +47,28 @@ export function DashboardContent() {
   const [recommendations, setRecommendations] = React.useState<RoleRecommendation[]>([]);
   const [isRecommendationsLoading, setIsRecommendationsLoading] = React.useState(true);
   const [recommendationsError, setRecommendationsError] = React.useState<string | null>(null);
-  const [lastReportId, setLastReportId] = React.useState<string | null>(null);
-
-  const readLastReportId = React.useCallback((): string | null => {
-    if (typeof window === "undefined") {
-      return null;
-    }
-
-    const reportId = sessionStorage.getItem("last_interview_report_id");
-    if (reportId && reportId.trim()) {
-      return reportId.trim();
-    }
-
-    return null;
-  }, []);
+  const [lastReportId, setLastReportId] = React.useState<number | null>(null);
 
   React.useEffect(() => {
-    try {
-      setLastReportId(readLastReportId());
-    } catch {
-      // ignore
-    }
-  }, [readLastReportId]);
+    const token = getAccessToken();
+    if (!token) return;
 
-  React.useEffect(() => {
-    const handleStorage = () => {
-      setLastReportId(readLastReportId());
+    let cancelled = false;
+
+    const fetchLastReport = async () => {
+      try {
+        const history = await getInterviewReportsHistory(token);
+        if (!cancelled && history.length > 0) {
+          setLastReportId(history[0].session_id);
+        }
+      } catch {
+        // silently ignore — button simply won't show
+      }
     };
 
-    window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
-  }, [readLastReportId]);
+    void fetchLastReport();
+    return () => { cancelled = true; };
+  }, []);
 
   const shouldOpenOnboarding = React.useMemo(() => {
     if (!profile) return false;

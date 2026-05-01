@@ -743,14 +743,34 @@ function InterviewPageContent() {
     const activeQuestion = currentQuestion || fallbackQuestion;
 
     React.useEffect(() => {
-        if (sessionStatus !== "closed" || !isJoined || !sessionNumericId) {
+        if (sessionStatus !== "in_progress" || !isJoined || !roomId || sessionNumericId) {
             return;
         }
 
-        try {
-            sessionStorage.setItem("last_interview_report_id", String(sessionNumericId));
-        } catch {
-            // ignore
+        let cancelled = false;
+
+        const fetchSessionId = async () => {
+            const headers = getAuthHeaders();
+            if (!headers) return;
+
+            try {
+                const detail = await fetchSessionDetail(headers, roomId);
+                if (!cancelled && detail.my_interview_session_id && Number.isFinite(detail.my_interview_session_id)) {
+                    setSessionNumericId(detail.my_interview_session_id);
+                }
+            } catch {
+                // silently ignore — redirect won't fire but session continues
+            }
+        };
+
+        void fetchSessionId();
+
+        return () => { cancelled = true; };
+    }, [sessionStatus, isJoined, roomId, sessionNumericId, getAuthHeaders, fetchSessionDetail]);
+
+    React.useEffect(() => {
+        if (sessionStatus !== "closed" || !isJoined || !sessionNumericId) {
+            return;
         }
 
         const timer = window.setTimeout(() => {
