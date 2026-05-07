@@ -7,6 +7,7 @@ import {
   SkillRadarChart,
   RecommendationsList,
   RecentActivityFeed,
+  TimelineChart,
 } from "@/components/Dashboard";
 import { getEvaluationHistory } from "@/services/interviewReportService";
 import { EvaluationHistoryItem } from "@/types/interviewReport";
@@ -76,6 +77,8 @@ function ProgressContent() {
                 error={error.metrics}
                 onRetry={refetch}
               />
+
+              <TimelineChart />
 
               <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-12">
                 <div className="lg:col-span-5">

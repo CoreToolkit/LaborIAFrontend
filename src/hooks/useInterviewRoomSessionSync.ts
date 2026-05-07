@@ -72,6 +72,7 @@ export function useInterviewRoomSessionSync({
           id: restored.question.roundId || `round-${restored.question.roundIndex ?? "active"}`,
           text: restored.question.text,
           note: `Skill objetivo: ${skill} | Dificultad: ${difficulty}`,
+          targetSkill: restored.question.targetSkill ?? null,
         };
 
         currentQuestionRef.current = restoredQuestion;

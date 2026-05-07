@@ -10,6 +10,7 @@ export interface AudioPlayerQuestion {
   id: string;
   text: string;
   note?: string;
+  targetSkill?: string | null;
 }
 
 interface AudioPlayerProps {

@@ -1,4 +1,4 @@
-import { EmployabilityScoreResponse, TimelinePoint, UserMetricsResponse } from "@/types/metrics";
+import { EmployabilityScoreResponse, TimelineSummary, UserMetricsResponse } from "@/types/metrics";
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
@@ -51,9 +51,8 @@ const parseEmployabilityScore = (payload: unknown): EmployabilityScoreResponse =
   };
 };
 
-const parseTimeline = (payload: unknown): TimelinePoint[] => {
-  if (!Array.isArray(payload)) return [];
-  return payload
+const parseTimelinePoints = (raw: unknown[]): TimelineSummary["points"] =>
+  raw
     .filter(isObject)
     .map((item) => ({
       period: typeof item.period === "string" ? item.period : "",
@@ -61,18 +60,41 @@ const parseTimeline = (payload: unknown): TimelinePoint[] => {
       count: Math.max(0, Math.floor(toNumber(item.count))),
     }))
     .filter((p) => p.period !== "");
+
+const VALID_TREND_DIRECTIONS = ["improving", "declining", "stable", "insufficient_data"] as const;
+
+const parseTimelineSummary = (payload: unknown): TimelineSummary => {
+  if (!isObject(payload)) {
+    return { points: [], trend_direction: "insufficient_data", trend_percentage: null };
+  }
+
+  const points = Array.isArray(payload.points) ? parseTimelinePoints(payload.points) : [];
+
+  const dir = typeof payload.trend_direction === "string" &&
+    (VALID_TREND_DIRECTIONS as readonly string[]).includes(payload.trend_direction)
+    ? (payload.trend_direction as TimelineSummary["trend_direction"])
+    : "insufficient_data";
+
+  const trend_percentage =
+    typeof payload.trend_percentage === "number" && Number.isFinite(payload.trend_percentage)
+      ? payload.trend_percentage
+      : null;
+
+  return { points, trend_direction: dir, trend_percentage };
 };
 
-export const getMetricsTimeline = async (
+export const getTimelineSummary = async (
   token: string,
-  granularity: "week" | "month" = "week"
-): Promise<TimelinePoint[]> => {
+  granularity: "week" | "month" = "week",
+  signal?: AbortSignal
+): Promise<TimelineSummary> => {
   const response = await fetch(`/api/metrics/timeline?granularity=${granularity}`, {
     method: "GET",
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
+    signal,
   });
 
   if (!response.ok) {
@@ -82,15 +104,20 @@ export const getMetricsTimeline = async (
   }
 
   const payload = (await response.json()) as unknown;
-  return parseTimeline(payload);
+  return parseTimelineSummary(payload);
 };
+
 
 const parseUserMetrics = (payload: unknown): UserMetricsResponse => {
   if (!isObject(payload)) {
     throw new Error("Respuesta inesperada del servidor.");
   }
 
-  const rawSkills = isObject(payload.score_by_skill) ? payload.score_by_skill : {};
+  const rawSkills = isObject(payload.score_by_category)
+    ? payload.score_by_category
+    : isObject(payload.score_by_skill)
+    ? payload.score_by_skill
+    : {};
   const score_by_skill: Record<string, number> = {};
   for (const [key, val] of Object.entries(rawSkills)) {
     score_by_skill[key] = clamp(toNumber(val));

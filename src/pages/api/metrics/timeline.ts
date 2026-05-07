@@ -27,7 +27,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     const backendResponse = await fetch(
-      `${backendUrl}/api/metrics/timeline?granularity=${granularity}`,
+      `${backendUrl}/api/metrics/timeline/summary?granularity=${granularity}`,
       {
         method: "GET",
         headers: {

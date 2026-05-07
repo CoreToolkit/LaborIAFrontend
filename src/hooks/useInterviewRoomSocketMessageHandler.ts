@@ -207,6 +207,7 @@ export function useInterviewRoomSocketMessageHandler({
           id: nextState.question.roundId || `round-${nextState.question.roundIndex ?? "active"}`,
           text: nextState.question.text,
           note: `Skill objetivo: ${nextState.question.targetSkill ?? "General"} | Dificultad: ${nextState.question.difficulty ?? "N/A"}`,
+          targetSkill: nextState.question.targetSkill ?? null,
         };
         currentQuestionRef.current = nextQuestion;
         setCurrentQuestion(nextQuestion);

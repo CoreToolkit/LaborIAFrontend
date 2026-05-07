@@ -1,5 +1,6 @@
 import React from "react";
 import type { TTSAudioStatus } from "@/hooks/useTTSAudioPlayer";
+import type { AudioPlayerQuestion } from "@/components/AudioPlayer";
 import { getAccessToken } from "@/utils/session";
 import { convertBlobToWav } from "@/utils/interviewRoom";
 
@@ -31,6 +32,7 @@ export type EvaluationResult = {
 type UseGroupInterviewAnswerFlowParams = {
   localStreamRef: React.MutableRefObject<MediaStream | null>;
   activeRoundIdRef: React.MutableRefObject<string | null>;
+  currentQuestionRef: React.MutableRefObject<AudioPlayerQuestion | null>;
   backendHttpOriginRef: React.MutableRefObject<string>;
   roomId: string;
   activeRoundId: string | null;
@@ -40,6 +42,7 @@ type UseGroupInterviewAnswerFlowParams = {
 export function useGroupInterviewAnswerFlow({
   localStreamRef,
   activeRoundIdRef,
+  currentQuestionRef,
   backendHttpOriginRef,
   roomId,
   activeRoundId,
@@ -270,6 +273,8 @@ export function useGroupInterviewAnswerFlow({
         const formData = new FormData();
         formData.append("round_id", roundId);
         formData.append("audio_file", wavBlob, "answer.wav");
+        const targetSkill = currentQuestionRef.current?.targetSkill;
+        if (targetSkill) formData.append("category", targetSkill);
 
         const response = await fetch(
           `${backendHttpOriginRef.current ?? ""}/api/group-sessions/${encodeURIComponent(roomId)}/answers/audio`,
@@ -303,7 +308,7 @@ export function useGroupInterviewAnswerFlow({
     };
 
     recorder.stop();
-  }, [activeRoundIdRef, backendHttpOriginRef, roomId]);
+  }, [activeRoundIdRef, backendHttpOriginRef, currentQuestionRef, roomId]);
 
   // ─── Reset al salir de la sala ────────────────────────────────────────────
   const resetForLeave = React.useCallback(() => {

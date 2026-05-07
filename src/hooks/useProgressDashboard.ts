@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getUserMetrics, getMetricsTimeline } from "@/services/metricsService";
+import { getUserMetrics } from "@/services/metricsService";
 import { getRecommendations } from "@/services/matchingService";
-import { UserMetricsResponse, TimelinePoint } from "@/types/metrics";
+import { UserMetricsResponse } from "@/types/metrics";
 import { RoleRecommendation } from "@/types/matching";
 import { BadgeUnlocked } from "@/types/interviewReport";
 import { getAccessToken } from "@/utils/session";
@@ -33,13 +33,11 @@ export function clearProgressDashboardCache(): void {
 
 export interface ProgressDashboardErrors {
   metrics: string | null;
-  timeline: string | null;
   recommendations: string | null;
 }
 
 export interface UseProgressDashboardResult {
   metrics: UserMetricsResponse | null;
-  timeline: TimelinePoint[];
   recommendations: RoleRecommendation[];
   badges: BadgeUnlocked[];
   isLoading: boolean;
@@ -53,16 +51,13 @@ function toMsg(err: unknown, fallback: string): string {
 
 export function useProgressDashboard(): UseProgressDashboardResult {
   const [metrics, setMetrics] = useState<UserMetricsResponse | null>(null);
-  const [timeline, setTimeline] = useState<TimelinePoint[]>([]);
   const [recommendations, setRecommendations] = useState<RoleRecommendation[]>([]);
 
   const [metricsLoading, setMetricsLoading] = useState(true);
-  const [timelineLoading, setTimelineLoading] = useState(true);
   const [recommendationsLoading, setRecommendationsLoading] = useState(true);
 
   const [error, setError] = useState<ProgressDashboardErrors>({
     metrics: null,
-    timeline: null,
     recommendations: null,
   });
 
@@ -74,31 +69,26 @@ export function useProgressDashboard(): UseProgressDashboardResult {
 
     if (!token) {
       setMetricsLoading(false);
-      setTimelineLoading(false);
       setRecommendationsLoading(false);
-      setError({ metrics: sessionMsg, timeline: sessionMsg, recommendations: sessionMsg });
+      setError({ metrics: sessionMsg, recommendations: sessionMsg });
       return;
     }
 
     const run = ++fetchCountRef.current;
 
     setMetricsLoading(true);
-    setTimelineLoading(true);
     setRecommendationsLoading(true);
-    setError({ metrics: null, timeline: null, recommendations: null });
+    setError({ metrics: null, recommendations: null });
 
     const mk = cacheKey(token, "metrics");
-    const tk = cacheKey(token, "timeline");
     const rk = cacheKey(token, "recommendations");
 
     const cached = {
       metrics: readCache<UserMetricsResponse>(mk),
-      timeline: readCache<TimelinePoint[]>(tk),
       recommendations: readCache<RoleRecommendation[]>(rk),
     };
 
     if (cached.metrics) { setMetrics(cached.metrics); setMetricsLoading(false); }
-    if (cached.timeline) { setTimeline(cached.timeline); setTimelineLoading(false); }
     if (cached.recommendations) { setRecommendations(cached.recommendations); setRecommendationsLoading(false); }
 
     const fetches = [
@@ -108,13 +98,6 @@ export function useProgressDashboard(): UseProgressDashboardResult {
             .then((d) => { if (run === fetchCountRef.current) { setMetrics(d); writeCache(mk, d); } })
             .catch((e) => { if (run === fetchCountRef.current) setError((prev) => ({ ...prev, metrics: toMsg(e, "No se pudieron cargar las métricas.") })); })
             .finally(() => { if (run === fetchCountRef.current) setMetricsLoading(false); }),
-
-      cached.timeline
-        ? Promise.resolve()
-        : getMetricsTimeline(token)
-            .then((d) => { if (run === fetchCountRef.current) { setTimeline(d); writeCache(tk, d); } })
-            .catch((e) => { if (run === fetchCountRef.current) setError((prev) => ({ ...prev, timeline: toMsg(e, "No se pudo cargar el historial.") })); })
-            .finally(() => { if (run === fetchCountRef.current) setTimelineLoading(false); }),
 
       cached.recommendations
         ? Promise.resolve()
@@ -131,11 +114,10 @@ export function useProgressDashboard(): UseProgressDashboardResult {
     void fetchAll();
   }, [fetchAll]);
 
-  const isLoading = metricsLoading || timelineLoading || recommendationsLoading;
+  const isLoading = metricsLoading || recommendationsLoading;
 
   return {
     metrics,
-    timeline,
     recommendations,
     badges: [],
     isLoading,

@@ -154,6 +154,7 @@ function InterviewPageContent() {
     } = useGroupInterviewAnswerFlow({
         localStreamRef,
         activeRoundIdRef,
+        currentQuestionRef,
         backendHttpOriginRef,
         roomId,
         activeRoundId,

@@ -17,6 +17,12 @@ export interface TimelinePoint {
   count: number;
 }
 
+export interface TimelineSummary {
+  points: TimelinePoint[];
+  trend_direction: "improving" | "declining" | "stable" | "insufficient_data";
+  trend_percentage: number | null;
+}
+
 export interface UserMetricsResponse {
   avg_score: number;
   score_by_skill: Record<string, number>;
