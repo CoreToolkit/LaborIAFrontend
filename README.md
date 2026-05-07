@@ -1,5 +1,9 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/pages/api-reference/create-next-app).
 
+## Documentación de módulos
+
+- [Módulo de Progreso y Métricas](docs/progress-metrics.md) — endpoints, flujo de cálculo de scores, badges y arquitectura del dashboard.
+
 ## Getting Started
 
 First, run the development server:
