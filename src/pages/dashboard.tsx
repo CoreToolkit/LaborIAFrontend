@@ -48,6 +48,7 @@ export function DashboardContent() {
   const [isRecommendationsLoading, setIsRecommendationsLoading] = React.useState(true);
   const [recommendationsError, setRecommendationsError] = React.useState<string | null>(null);
   const [lastReportId, setLastReportId] = React.useState<number | null>(null);
+  const [practicesCount, setPracticesCount] = React.useState<number | null>(null);
 
   React.useEffect(() => {
     const token = getAccessToken();
@@ -58,8 +59,9 @@ export function DashboardContent() {
     const fetchLastReport = async () => {
       try {
         const history = await getInterviewReportsHistory(token);
-        if (!cancelled && history.length > 0) {
-          setLastReportId(history[0].session_id);
+        if (!cancelled) {
+          setPracticesCount(history.length);
+          if (history.length > 0) setLastReportId(history[0].session_id);
         }
       } catch {
         // silently ignore — button simply won't show
@@ -126,7 +128,7 @@ export function DashboardContent() {
   }, [isProfileLoading, shouldOpenOnboarding, initializeRecommendations]);
 
   const handleOpenInterviewRoom = () => {
-    router.push("/interviewPageEnter");
+    router.push("/interview");
   };
 
   const rolesCount = recommendations.length;
@@ -223,7 +225,7 @@ export function DashboardContent() {
                   description="Practica en sala de entrevista con audio en tiempo real"
                   metric={{
                     label: "Practicas realizadas",
-                    value: "2",
+                    value: practicesCount ?? "—",
                   }}
                   action={{
                     label: "Entrar",

@@ -8,6 +8,9 @@ import { Button } from "@/components/ui/button";
 import { useIndividualInterview } from "@/hooks/useIndividualInterview";
 import type { InterviewDifficulty } from "@/types/individualInterview";
 
+// Tiny silent WAV to unlock browser autoplay policy synchronously on user gesture
+const SILENT_WAV = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
+
 const DIFFICULTY_LABELS: Record<InterviewDifficulty, string> = {
   adaptive: "Adaptativa",
   junior: "Junior",
@@ -61,6 +64,11 @@ function IndividualInterviewContent() {
   const router = useRouter();
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
 
+  const roleNameFromQuery =
+    router.isReady && typeof router.query.role_name === "string"
+      ? router.query.role_name.trim()
+      : "";
+
   const {
     step,
     session,
@@ -85,12 +93,42 @@ function IndividualInterviewContent() {
     endInterview,
   } = useIndividualInterview();
 
-  // Auto-play TTS when URL is ready
+  // Unlock browser autoplay policy within the user gesture using the real audio
+  // element so the browser records a user-gesture interaction on that specific element.
+  // The silent WAV has 0 samples, so it ends immediately — we must NOT have onEnded
+  // wired up in JSX (handled manually in the TTS effect below).
+  const prewarmAudio = React.useCallback(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.src = SILENT_WAV;
+    // No .then(pause) — when TTS later sets audio.src the browser stops SILENT_WAV
+    // automatically, and a stale pause() racing after TTS starts would cut it off.
+    void audio.play().catch(() => undefined);
+  }, []);
+
+  // Auto-play TTS when URL is ready.
+  // Attaches the "ended" listener only for real TTS playback, not the prewarm.
   React.useEffect(() => {
     if (!ttsAudioUrl || !audioRef.current) return;
-    audioRef.current.src = ttsAudioUrl;
-    audioRef.current.play().catch(() => onTtsPlaybackBlocked());
-  }, [ttsAudioUrl, onTtsPlaybackBlocked]);
+    const audio = audioRef.current;
+
+    const handleEnded = () => { console.log("[TTS] audio ended"); onTtsEnded(); };
+    audio.addEventListener("ended", handleEnded);
+
+    audio.src = ttsAudioUrl;
+    console.log("[TTS] calling audio.play()");
+    void audio.play()
+      .then(() => console.log("[TTS] play() resolved — audio is playing"))
+      .catch((err) => {
+        console.warn("[TTS] play() blocked:", err);
+        audio.removeEventListener("ended", handleEnded);
+        onTtsPlaybackBlocked();
+      });
+
+    return () => {
+      audio.removeEventListener("ended", handleEnded);
+    };
+  }, [ttsAudioUrl, onTtsEnded, onTtsPlaybackBlocked]);
 
   const handleEndInterview = () => {
     endInterview();
@@ -100,6 +138,13 @@ function IndividualInterviewContent() {
       void router.push("/progress");
     }
   };
+
+  // Pre-fill skill with the role name received from the matching/interview-choice flow
+  React.useEffect(() => {
+    if (roleNameFromQuery && step === "idle") {
+      setTargetSkill(roleNameFromQuery);
+    }
+  }, [roleNameFromQuery, step, setTargetSkill]);
 
   const isActiveStep = step !== "initializing" && step !== "idle" && step !== "error";
   const showQuestion = isActiveStep && currentQuestion;
@@ -111,8 +156,8 @@ function IndividualInterviewContent() {
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
 
-      {/* Hidden audio element for TTS */}
-      <audio ref={audioRef} onEnded={onTtsEnded} className="hidden" />
+      {/* Hidden audio element for TTS — onEnded is wired dynamically in the play effect */}
+      <audio ref={audioRef} className="hidden" />
 
       <div className="min-h-screen bg-gradient-to-b from-slate-50 via-blue-50 to-white">
         {/* Header */}
@@ -166,12 +211,21 @@ function IndividualInterviewContent() {
                 </p>
               </div>
 
+              {roleNameFromQuery && (
+                <div className="flex items-center gap-2 rounded-lg bg-blue-50 border border-blue-100 px-3 py-2">
+                  <span className="text-xs text-blue-600 font-medium">Rol seleccionado:</span>
+                  <span className="text-xs text-blue-800 font-semibold">{roleNameFromQuery}</span>
+                </div>
+              )}
+
               <div className="space-y-2">
                 <label className="block text-xs font-medium text-slate-500">
                   Skill a practicar
-                  <span className="ml-1 font-normal text-slate-400">
-                    (opcional — se elige automáticamente del perfil)
-                  </span>
+                  {!roleNameFromQuery && (
+                    <span className="ml-1 font-normal text-slate-400">
+                      (opcional — se elige automáticamente del perfil)
+                    </span>
+                  )}
                 </label>
                 <input
                   type="text"
@@ -204,7 +258,7 @@ function IndividualInterviewContent() {
 
               <button
                 type="button"
-                onClick={() => void generateNextQuestion()}
+                onClick={() => { prewarmAudio(); void generateNextQuestion(); }}
                 className="w-full py-3 text-sm font-semibold bg-blue-600 text-white rounded-xl hover:bg-blue-700 active:scale-[0.98] transition-all"
               >
                 Iniciar entrevista
@@ -361,7 +415,7 @@ function IndividualInterviewContent() {
                   <div className="grid grid-cols-2 gap-3">
                     <button
                       type="button"
-                      onClick={() => void generateNextQuestion()}
+                      onClick={() => { prewarmAudio(); void generateNextQuestion(); }}
                       className="py-3 text-sm font-semibold bg-blue-600 text-white rounded-xl hover:bg-blue-700 active:scale-[0.98] transition-all"
                     >
                       Siguiente pregunta

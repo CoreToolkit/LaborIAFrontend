@@ -229,7 +229,7 @@ function BadgesSection({ badges }: { badges: BadgeUnlocked[] }) {
         {badges.map((badge) => (
           <div
             key={badge.id}
-            className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+            className="flex items-start gap-3 rounded-2xl border border-amber-100 bg-amber-50 p-4 shadow-sm"
           >
             <span className="text-3xl flex-shrink-0">{badge.icon}</span>
             <div>
@@ -240,6 +240,63 @@ function BadgesSection({ badges }: { badges: BadgeUnlocked[] }) {
         ))}
       </div>
     </section>
+  );
+}
+
+function BadgeUnlockedModal({
+  badges,
+  onClose,
+}: {
+  badges: BadgeUnlocked[];
+  onClose: () => void;
+}) {
+  if (badges.length === 0) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full max-w-md rounded-3xl bg-white shadow-2xl p-8 text-center"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* sparkle decoration */}
+        <div className="absolute -top-5 left-1/2 -translate-x-1/2 flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-400 shadow-lg text-2xl">
+          🏅
+        </div>
+
+        <div className="mt-8">
+          <p className="text-xs font-semibold uppercase tracking-widest text-amber-500 mb-1">
+            ¡Logro desbloqueado!
+          </p>
+          <h2 className="text-xl font-bold text-slate-900">Badge Unlocked!</h2>
+        </div>
+
+        <div className="mt-6 space-y-3">
+          {badges.map((badge) => (
+            <div
+              key={badge.id}
+              className="flex items-center gap-4 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-left"
+            >
+              <span className="text-4xl">{badge.icon}</span>
+              <div>
+                <p className="text-sm font-bold text-slate-900">{badge.name}</p>
+                <p className="text-xs text-slate-500 mt-0.5">{badge.description}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <button
+          type="button"
+          onClick={onClose}
+          className="mt-6 w-full rounded-xl bg-slate-900 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 transition-colors"
+        >
+          ¡Genial!
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -254,6 +311,7 @@ function InterviewReportContent() {
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [isNotFound, setIsNotFound] = React.useState(false);
+  const [showBadgeModal, setShowBadgeModal] = React.useState(false);
 
   React.useEffect(() => {
     if (!router.isReady || Number.isNaN(sessionId)) {
@@ -291,7 +349,10 @@ function InterviewReportContent() {
       setIsNotFound(false);
       try {
         const data = await getInterviewReport(sessionId, token);
-        if (!cancelled) setReport(data);
+        if (!cancelled) {
+          setReport(data);
+          if (data.badges_unlocked.length > 0) setShowBadgeModal(true);
+        }
       } catch (err) {
         if (cancelled) return;
         if (err instanceof NotFoundError) {
@@ -449,6 +510,13 @@ function InterviewReportContent() {
           {renderBody()}
         </div>
       </DashboardLayout>
+
+      {report && (
+        <BadgeUnlockedModal
+          badges={showBadgeModal ? report.badges_unlocked : []}
+          onClose={() => setShowBadgeModal(false)}
+        />
+      )}
     </>
   );
 }

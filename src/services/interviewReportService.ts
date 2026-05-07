@@ -2,6 +2,7 @@ import {
   EvaluationHistoryResponse,
   InterviewReportResponse,
   InterviewReportsHistoryResponse,
+  UserBadge,
 } from "@/types/interviewReport";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "";
@@ -79,6 +80,24 @@ export const getInterviewReportsHistory = async (
 
   const payload = (await response.json()) as unknown;
   return Array.isArray(payload) ? (payload as InterviewReportsHistoryResponse) : [];
+};
+
+export const getUserBadges = async (token: string): Promise<UserBadge[]> => {
+  const response = await fetch(`${BACKEND_URL}/api/badges/me`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      await parseErrorMessage(response, "No se pudieron cargar los badges.")
+    );
+  }
+
+  const payload = (await response.json()) as unknown;
+  return Array.isArray(payload) ? (payload as UserBadge[]) : [];
 };
 
 export const getEvaluationHistory = async (

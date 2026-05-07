@@ -12,7 +12,6 @@ import {
   BarChart3,
   Clock3,
   Award,
-  Loader2,
   CircleSlash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -74,13 +73,14 @@ function StatusInline({ score }: { score: number | null }) {
     );
   }
 
+  const rounded = Math.round(score);
+  const colorClass =
+    rounded >= 70 ? "text-emerald-600" : rounded >= 50 ? "text-amber-500" : "text-red-500";
+
   return (
     <div className="flex min-w-[84px] flex-col items-center justify-center text-center leading-none">
-      <div className="flex items-center gap-1.5 text-sm font-medium text-[#1A237E]">
-        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
-        <span>{Math.round(score)}</span>
-      </div>
-      <span className="mt-1 text-[11px] font-medium text-[#616161]">En progreso</span>
+      <span className={`text-sm font-bold tabular-nums ${colorClass}`}>{rounded}</span>
+      <span className="mt-1 text-[11px] font-medium text-[#616161]">{scoreLabel(score)}</span>
     </div>
   );
 }

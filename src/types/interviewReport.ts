@@ -32,6 +32,17 @@ export interface BadgeUnlocked {
   icon: string;
 }
 
+export interface UserBadge {
+  id: number;
+  name: string;
+  description: string;
+  icon: string;
+  condition_type: string;
+  condition_value: string;
+  is_unlocked: boolean;
+  progress: number; // 0.0 – 1.0
+}
+
 export interface InterviewReportResponse {
   session_id: number;
   session_score: number | null;

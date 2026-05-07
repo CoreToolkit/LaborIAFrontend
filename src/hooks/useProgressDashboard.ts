@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getUserMetrics } from "@/services/metricsService";
 import { getRecommendations } from "@/services/matchingService";
+import { getUserBadges } from "@/services/interviewReportService";
 import { UserMetricsResponse } from "@/types/metrics";
 import { RoleRecommendation } from "@/types/matching";
-import { BadgeUnlocked } from "@/types/interviewReport";
+import { UserBadge } from "@/types/interviewReport";
 import { getAccessToken } from "@/utils/session";
 
 // ── Module-level cache (5 min TTL) ───────────────────────────────────────────
@@ -39,7 +40,7 @@ export interface ProgressDashboardErrors {
 export interface UseProgressDashboardResult {
   metrics: UserMetricsResponse | null;
   recommendations: RoleRecommendation[];
-  badges: BadgeUnlocked[];
+  badges: UserBadge[];
   isLoading: boolean;
   error: ProgressDashboardErrors;
   refetch: () => void;
@@ -52,9 +53,11 @@ function toMsg(err: unknown, fallback: string): string {
 export function useProgressDashboard(): UseProgressDashboardResult {
   const [metrics, setMetrics] = useState<UserMetricsResponse | null>(null);
   const [recommendations, setRecommendations] = useState<RoleRecommendation[]>([]);
+  const [badges, setBadges] = useState<UserBadge[]>([]);
 
   const [metricsLoading, setMetricsLoading] = useState(true);
   const [recommendationsLoading, setRecommendationsLoading] = useState(true);
+  const [badgesLoading, setBadgesLoading] = useState(true);
 
   const [error, setError] = useState<ProgressDashboardErrors>({
     metrics: null,
@@ -70,6 +73,7 @@ export function useProgressDashboard(): UseProgressDashboardResult {
     if (!token) {
       setMetricsLoading(false);
       setRecommendationsLoading(false);
+      setBadgesLoading(false);
       setError({ metrics: sessionMsg, recommendations: sessionMsg });
       return;
     }
@@ -78,18 +82,22 @@ export function useProgressDashboard(): UseProgressDashboardResult {
 
     setMetricsLoading(true);
     setRecommendationsLoading(true);
+    setBadgesLoading(true);
     setError({ metrics: null, recommendations: null });
 
     const mk = cacheKey(token, "metrics");
     const rk = cacheKey(token, "recommendations");
+    const bk = cacheKey(token, "badges");
 
     const cached = {
       metrics: readCache<UserMetricsResponse>(mk),
       recommendations: readCache<RoleRecommendation[]>(rk),
+      badges: readCache<UserBadge[]>(bk),
     };
 
     if (cached.metrics) { setMetrics(cached.metrics); setMetricsLoading(false); }
     if (cached.recommendations) { setRecommendations(cached.recommendations); setRecommendationsLoading(false); }
+    if (cached.badges) { setBadges(cached.badges); setBadgesLoading(false); }
 
     const fetches = [
       cached.metrics
@@ -105,6 +113,13 @@ export function useProgressDashboard(): UseProgressDashboardResult {
             .then((d) => { if (run === fetchCountRef.current) { setRecommendations(d); writeCache(rk, d); } })
             .catch((e) => { if (run === fetchCountRef.current) setError((prev) => ({ ...prev, recommendations: toMsg(e, "No se pudieron cargar las recomendaciones.") })); })
             .finally(() => { if (run === fetchCountRef.current) setRecommendationsLoading(false); }),
+
+      cached.badges
+        ? Promise.resolve()
+        : getUserBadges(token)
+            .then((d) => { if (run === fetchCountRef.current) { setBadges(d); writeCache(bk, d); } })
+            .catch(() => { /* badges failure is non-critical, keep empty array */ })
+            .finally(() => { if (run === fetchCountRef.current) setBadgesLoading(false); }),
     ];
 
     await Promise.allSettled(fetches);
@@ -114,12 +129,12 @@ export function useProgressDashboard(): UseProgressDashboardResult {
     void fetchAll();
   }, [fetchAll]);
 
-  const isLoading = metricsLoading || recommendationsLoading;
+  const isLoading = metricsLoading || recommendationsLoading || badgesLoading;
 
   return {
     metrics,
     recommendations,
-    badges: [],
+    badges,
     isLoading,
     error,
     refetch: fetchAll,

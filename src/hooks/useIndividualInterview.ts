@@ -231,6 +231,9 @@ export function useIndividualInterview(): UseIndividualInterviewResult {
 
     clearCountdownTimers();
     revokeTtsUrl();
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
 
     setStep("generating");
     setError(null);
@@ -269,9 +272,20 @@ export function useIndividualInterview(): UseIndividualInterviewResult {
         setTtsAudioUrl(url);
         setTtsStatus("playing");
       } catch {
-        // TTS failed — skip to countdown so interview can continue
-        setTtsStatus("error");
-        startCountdown();
+        // ElevenLabs API unavailable — fall back to browser speech synthesis
+        if (typeof window !== "undefined" && "speechSynthesis" in window) {
+          setTtsStatus("playing");
+          const utterance = new SpeechSynthesisUtterance(generated.question);
+          utterance.lang = "es-ES";
+          utterance.rate = 0.95;
+          utterance.onend = () => startCountdown();
+          utterance.onerror = () => { setTtsStatus("error"); startCountdown(); };
+          window.speechSynthesis.cancel(); // clear any queued speech
+          window.speechSynthesis.speak(utterance);
+        } else {
+          setTtsStatus("error");
+          startCountdown();
+        }
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "No se pudo generar la pregunta.");
@@ -282,12 +296,18 @@ export function useIndividualInterview(): UseIndividualInterviewResult {
   const endInterview = React.useCallback(() => {
     clearCountdownTimers();
     revokeTtsUrl();
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
   }, [clearCountdownTimers, revokeTtsUrl]);
 
   React.useEffect(
     () => () => {
       clearCountdownTimers();
       revokeTtsUrl();
+      if (typeof window !== "undefined" && "speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
     },
     [clearCountdownTimers, revokeTtsUrl]
   );
