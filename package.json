@@ -11,7 +11,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "test:e2e": "npm run clean:next && playwright test"
+    "test:e2e": "npm run clean:next && playwright test",
+    "test:e2e:headed": "npm run clean:next && playwright test --headed",
+    "test:e2e:report": "playwright show-report"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",
