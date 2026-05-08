@@ -14,7 +14,6 @@ import { EvaluationHistoryItem } from "@/types/interviewReport";
 import { getAccessToken } from "@/utils/session";
 import { useProgressDashboard } from "@/hooks/useProgressDashboard";
 import { BadgesList } from "@/components/BadgesList";
-
 function ProgressContent() {
   const { metrics, recommendations, badges, isLoading, error, refetch } = useProgressDashboard();
 
