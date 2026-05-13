@@ -162,7 +162,7 @@ export function DashboardContent() {
   return (
     <>
       <Head>
-        <title>Dashboard de Roles test terraform - LaborIA</title>
+        <title>Dashboard - LaborIA</title>
         <meta
           name="description"
           content="Recomendaciones de roles segun tu perfil y match score en LaborIA"
