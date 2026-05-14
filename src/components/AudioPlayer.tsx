@@ -11,6 +11,7 @@ export interface AudioPlayerQuestion {
   text: string;
   note?: string;
   targetSkill?: string | null;
+  isIntro?: boolean;
 }
 
 interface AudioPlayerProps {

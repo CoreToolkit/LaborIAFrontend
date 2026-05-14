@@ -6,6 +6,7 @@ export type GroupInterviewQuestion = {
   text: string;
   targetSkill: string | null;
   difficulty: string | null;
+  isIntro: boolean;
 };
 
 export type GroupInterviewUiState = {
@@ -23,6 +24,7 @@ export type GroupInterviewEventPayload = {
   question_text?: string;
   target_skill?: string;
   difficulty?: string;
+  is_intro?: boolean;
   status?: string;
 };
 
@@ -32,6 +34,7 @@ export type QuestionAudioReadyPayload = {
   round_index?: number;
   audio_b64: string;
   question_text?: string;
+  is_intro?: boolean;
   session_code?: string;
   emitted_at?: string;
 };
@@ -42,6 +45,7 @@ export type TtsErrorPayload = {
   round_index?: number;
   tts_error?: string;
   question_text?: string;
+  is_intro?: boolean;
   session_code?: string;
   emitted_at?: string;
 };
@@ -72,6 +76,33 @@ const asNumber = (value: unknown): number | null => {
     const parsed = Number(value);
     if (Number.isFinite(parsed)) {
       return parsed;
+    }
+  }
+
+  return null;
+};
+
+const asBoolean = (value: unknown): boolean | null => {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true") {
+      return true;
+    }
+    if (normalized === "false") {
+      return false;
+    }
+  }
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    if (value === 1) {
+      return true;
+    }
+    if (value === 0) {
+      return false;
     }
   }
 
@@ -111,6 +142,7 @@ const normalizeQuestionRecord = (
     text,
     targetSkill: asString(source.target_skill),
     difficulty: asString(source.difficulty),
+    isIntro: asBoolean(source.is_intro) ?? false,
   };
 };
 

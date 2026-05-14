@@ -723,25 +723,29 @@ function InterviewPageContent() {
         };
     }, [accessToken, roleId, roleNameFromQuery]);
 
-    const fallbackQuestion = React.useMemo<AudioPlayerQuestion>(() => {
+    const introQuestion = React.useMemo<AudioPlayerQuestion>(() => {
         const readableRoleName = roleDisplayName?.trim() || roleNameFromQuery || roleId || "el rol seleccionado";
 
-        if (roleId) {
-            return {
-                id: `intro-${roleId}`,
-                text: `Presentate y resume por que tu experiencia encaja con el rol ${readableRoleName}.`,
-                note: "Pregunta activa derivada del rol seleccionado.",
-            };
-        }
-
         return {
-            id: "intro-general",
-            text: "Presentate y resume brevemente la experiencia mas relevante que aportarias en esta entrevista.",
-            note: "Pregunta activa temporal mientras se define el flujo real de preguntas.",
+            id: roleId ? `intro-${roleId}` : "intro-general",
+            text: `Vamos a realizar una entrevista enfocada en el rol ${readableRoleName}. Hablaremos sobre tu experiencia, los retos mas comunes del rol y como abordarias situaciones reales.`,
+            note: "Introduccion inicial antes de la primera pregunta.",
+            isIntro: true,
         };
     }, [roleDisplayName, roleId, roleNameFromQuery]);
 
-    const activeQuestion = currentQuestion || fallbackQuestion;
+    const fallbackQuestion = React.useMemo<AudioPlayerQuestion>(() => {
+        return {
+            id: "idle-intro",
+            text: "Cuando la entrevista inicie, veras una introduccion breve y luego las preguntas de la ronda.",
+            note: "Sala lista para iniciar la entrevista.",
+            isIntro: false,
+        };
+    }, []);
+
+    const activeQuestion = currentQuestion
+        || (sessionStatus === "in_progress" ? introQuestion : fallbackQuestion);
+    const isIntroRound = Boolean(activeQuestion?.isIntro);
 
     React.useEffect(() => {
         if (sessionStatus !== "in_progress" || !isJoined || !roomId || sessionNumericId) {
@@ -921,7 +925,7 @@ function InterviewPageContent() {
                                     Estado: {sessionStatus}
                                 </span>
                                 <span className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-medium text-cyan-700">
-                                    Ronda: {activeRoundIndex ?? "--"}
+                                    {isIntroRound ? "Introduccion" : `Ronda: ${activeRoundIndex ?? "--"}`}
                                 </span>
                                 <span className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700">
                                     Total: {totalRounds}
@@ -1008,7 +1012,10 @@ function InterviewPageContent() {
                                 <div className="mb-3 flex items-center gap-2 text-rose-800">
                                     <AudioLines className="h-4 w-4" />
                                     <h2 className="text-sm font-semibold uppercase tracking-wide">
-                                        Ronda {(activeRoundIndex ?? 0) + 1} — Tu respuesta
+                                        {isIntroRound
+                                            ? "Introduccion a la entrevista"
+                                            : `Ronda ${(activeRoundIndex ?? 0) + 1} — Tu respuesta`
+                                        }
                                     </h2>
                                 </div>
                                 {currentQuestion && (

@@ -412,7 +412,8 @@ export function useGroupInterviewAnswerFlow({
 
   // ─── Trigger automático cuando el TTS termina ─────────────────────────────
   React.useEffect(() => {
-    if (ttsStatus !== "ended" || !activeRoundId) {
+    const isIntro = Boolean(currentQuestionRef.current?.isIntro);
+    if (ttsStatus !== "ended" || !activeRoundId || isIntro) {
       if (autoRecordTimerRef.current !== null) {
         window.clearTimeout(autoRecordTimerRef.current);
         autoRecordTimerRef.current = null;

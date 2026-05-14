@@ -21,6 +21,7 @@ type SignalingMessage = {
   question_text?: string;
   target_skill?: string;
   difficulty?: string;
+  is_intro?: boolean;
   status?: string;
   evaluation_id?: string;
 };
@@ -169,6 +170,7 @@ export function useInterviewRoomSocketMessageHandler({
             text: currentQuestionRef.current.text,
             targetSkill: null,
             difficulty: null,
+            isIntro: currentQuestionRef.current.isIntro ?? false,
           }
           : null,
       },
@@ -203,11 +205,15 @@ export function useInterviewRoomSocketMessageHandler({
       setTotalRounds(nextState.totalRounds);
 
       if (nextState.question) {
+        const isIntro = nextState.question.isIntro;
         const nextQuestion: AudioPlayerQuestion = {
           id: nextState.question.roundId || `round-${nextState.question.roundIndex ?? "active"}`,
           text: nextState.question.text,
-          note: `Skill objetivo: ${nextState.question.targetSkill ?? "General"} | Dificultad: ${nextState.question.difficulty ?? "N/A"}`,
+          note: isIntro
+            ? "Mensaje de bienvenida de la entrevista."
+            : `Skill objetivo: ${nextState.question.targetSkill ?? "General"} | Dificultad: ${nextState.question.difficulty ?? "N/A"}`,
           targetSkill: nextState.question.targetSkill ?? null,
+          isIntro,
         };
         currentQuestionRef.current = nextQuestion;
         setCurrentQuestion(nextQuestion);
