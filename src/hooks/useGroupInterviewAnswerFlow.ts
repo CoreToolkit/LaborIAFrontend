@@ -41,6 +41,12 @@ type UseGroupInterviewAnswerFlowParams = {
   selfId: string;
   /** ID del participante seleccionado para responder esta ronda (null en intro). */
   assignedUserId: string | null;
+  /**
+   * Callback opcional que se dispara cuando la evaluación de la respuesta
+   * termina (estado "completed" o "failed"). Recibe el round_id evaluado.
+   * La página lo usa para auto-avanzar a la siguiente ronda.
+   */
+  onEvaluationComplete?: (roundId: string) => void;
 };
 
 export function useGroupInterviewAnswerFlow({
@@ -53,6 +59,7 @@ export function useGroupInterviewAnswerFlow({
   ttsStatus,
   selfId,
   assignedUserId,
+  onEvaluationComplete,
 }: UseGroupInterviewAnswerFlowParams) {
   const [isRecording, setIsRecording] = React.useState(false);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
@@ -372,6 +379,10 @@ export function useGroupInterviewAnswerFlow({
           if (!cancelled) {
             setEvaluationResult(data);
             setIsEvaluating(false);
+            // Notificar a la página para que dispare la siguiente ronda
+            if (onEvaluationComplete) {
+              onEvaluationComplete(activeRoundIdRef.current ?? "");
+            }
           }
         } else if (!cancelled) {
           setTimeout(() => {

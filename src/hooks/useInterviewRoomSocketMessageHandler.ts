@@ -59,6 +59,8 @@ type UseInterviewRoomSocketMessageHandlerArgs = {
   handleTtsError: (payload: TtsErrorPayload) => void;
   assignedUserIdRef: React.MutableRefObject<string | null>;
   setAssignedUserId: React.Dispatch<React.SetStateAction<string | null>>;
+  /** Callback opcional: se llama cuando cualquier participante notifica que su evaluación terminó. */
+  onRoundEvaluationComplete?: (roundId: string) => void;
 };
 
 export function useInterviewRoomSocketMessageHandler({
@@ -85,6 +87,7 @@ export function useInterviewRoomSocketMessageHandler({
   handleTtsError,
   assignedUserIdRef,
   setAssignedUserId,
+  onRoundEvaluationComplete,
 }: UseInterviewRoomSocketMessageHandlerArgs) {
   const handleSocketMessage = React.useCallback((event: MessageEvent, sessionUserId: string) => {
     if (event.data instanceof ArrayBuffer) {
@@ -290,6 +293,16 @@ export function useInterviewRoomSocketMessageHandler({
       return;
     }
 
+    // Evento de evaluación completada: cualquier participante lo emite cuando su
+    // evaluación termina. El host lo recibe para auto-avanzar a la siguiente ronda.
+    // Se procesa SIN filtrar por senderId para que funcione incluso si el emisor
+    // es el propio host (cuando host == participante asignado).
+    if (payload.event === "round_evaluation_complete") {
+      const completedRoundId = (payload as { round_id?: string }).round_id ?? "";
+      onRoundEvaluationComplete?.(completedRoundId);
+      return;
+    }
+
     const senderId = payload.from || payload.user_id || "";
     if (!senderId || senderId === sessionUserId) {
       return;
@@ -329,6 +342,7 @@ export function useInterviewRoomSocketMessageHandler({
     handleTTSRoundStarted,
     handleTtsError,
     markRemoteActivity,
+    onRoundEvaluationComplete,
     removeParticipant,
     restartRecorderForNewPeer,
     selectedMimeTypeRef,

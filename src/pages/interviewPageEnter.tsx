@@ -124,6 +124,18 @@ function InterviewPageContent() {
     const currentQuestionRef = React.useRef<AudioPlayerQuestion | null>(null);
     /** Ref que siempre refleja el assignedUserId más reciente para acceso estable en closures. */
     const assignedUserIdRef = React.useRef<string | null>(null);
+    /**
+     * Set de round_id que ya han sido auto-avanzados.
+     * Evita que un doble disparo del evento genere dos llamadas consecutivas a /next.
+     */
+    const autoAdvancedRoundsRef = React.useRef<Set<string>>(new Set());
+    /** Ref al callback de evaluación completada: se asigna después de que sendJson está disponible. */
+    const onEvalCompleteRef = React.useRef<((roundId: string) => void) | undefined>(undefined);
+    /**
+     * Ref a la función que dispara el auto-avance a la siguiente ronda.
+     * Se reasigna en cada render para capturar siempre el isHost y executeHostAction más recientes.
+     */
+    const doAutoNextRef = React.useRef<(roundId: string) => void>(() => undefined);
 
     const {
         ttsStatus,
@@ -167,6 +179,10 @@ function InterviewPageContent() {
         ttsStatus,
         selfId: selfId ? String(selfId) : "",
         assignedUserId,
+        onEvaluationComplete: React.useCallback((roundId: string) => {
+            onEvalCompleteRef.current?.(roundId);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        }, []),
     });
 
     // Las refs se actualizan directamente en el handler del WebSocket (mismo tick de JS),
@@ -217,6 +233,34 @@ function InterviewPageContent() {
         }
         socket.send(JSON.stringify(message));
     }, []);
+
+    // ── Actualizar doAutoNextRef en cada render ─────────────────────────────────────
+    // Captura siempre el isHost y executeHostAction más recientes sin causar
+    // re-renders innecesarios en los hooks que dependen de la ref.
+    doAutoNextRef.current = (roundId: string) => {
+        if (!isHost || sessionStatusRef.current !== "in_progress") return;
+        const rid = roundId || activeRoundIdRef.current || "";
+        if (!rid || autoAdvancedRoundsRef.current.has(rid)) return;
+        autoAdvancedRoundsRef.current.add(rid);
+        window.setTimeout(() => {
+            void executeHostAction("next");
+        }, 3000);
+    };
+
+    // ── onEvalCompleteRef: llama tanto al WS como al auto-avance directo ───────────────
+    // El WS notifica a otros clientes (host ≠ participante).
+    // El auto-avance directo resuelve el caso host == participante,
+    // donde el servidor NO devuelve el mensaje al emisor.
+    onEvalCompleteRef.current = (roundId: string) => {
+        sendJson({
+            event: "round_evaluation_complete",
+            round_id: roundId,
+            from: selfIdRef.current,
+            user_id: selfIdRef.current,
+        } as SignalingMessage);
+        // También disparar directamente (host == participante asignado)
+        doAutoNextRef.current(roundId);
+    };
 
     const getAuthHeaders = React.useCallback((): HeadersInit | null => {
         const token = getAccessToken();
@@ -434,6 +478,13 @@ function InterviewPageContent() {
         handleTtsError,
         assignedUserIdRef,
         setAssignedUserId,
+        onRoundEvaluationComplete: React.useCallback((roundId: string) => {
+            // El host recibe el evento de otro participante y auto-avanza.
+            // La deduplicación via autoAdvancedRoundsRef evita doble disparo
+            // en el caso donde el host también es el participante asignado.
+            doAutoNextRef.current(roundId);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        }, []),
     });
 
     const {
@@ -499,6 +550,7 @@ function InterviewPageContent() {
         currentQuestionRef.current = null;
         assignedUserIdRef.current = null;
         setAssignedUserId(null);
+        autoAdvancedRoundsRef.current = new Set();
         resetAnswerFlowForLeave();
 
         selfIdRef.current = "";
@@ -701,7 +753,6 @@ function InterviewPageContent() {
     const activeRemoteCount = participants.length;
     const accessToken = typeof window !== "undefined" ? getAccessToken() : null;
     const startDisabled = sessionStatus !== "waiting" || runningAction !== null;
-    const nextDisabled = sessionStatus !== "in_progress" || runningAction !== null;
     const closeDisabled = sessionStatus !== "in_progress" || runningAction !== null;
 
     React.useEffect(() => {
@@ -760,6 +811,41 @@ function InterviewPageContent() {
     const activeQuestion = currentQuestion
         || (sessionStatus === "in_progress" ? introQuestion : fallbackQuestion);
     const isIntroRound = Boolean(activeQuestion?.isIntro);
+
+    // ── Auto-avance: intro → primera ronda ────────────────────────────────────
+    // Cuando el TTS de la intro termina, el host dispara automáticamente
+    // la primera ronda sin necesidad de pulsar ningún botón.
+    const introAutoFiredRef = React.useRef(false);
+
+    React.useEffect(() => {
+        if (
+            !isHost
+            || ttsStatus !== "ended"
+            || !activeRoundId
+            || !isIntroRound
+            || sessionStatus !== "in_progress"
+        ) return;
+        if (introAutoFiredRef.current) return;
+        introAutoFiredRef.current = true;
+
+        const timer = window.setTimeout(() => {
+            const rid = activeRoundIdRef.current || "";
+            if (rid && !autoAdvancedRoundsRef.current.has(rid)) {
+                autoAdvancedRoundsRef.current.add(rid);
+                void executeHostAction("next");
+            }
+        }, 1500); // pequeña pausa para que la UI quede visible
+
+        return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [ttsStatus, isHost, activeRoundId, isIntroRound, sessionStatus]);
+
+    // Resetear flag intro si la sesión vuelve a idle (nueva sesión)
+    React.useEffect(() => {
+        if (sessionStatus === "idle") {
+            introAutoFiredRef.current = false;
+        }
+    }, [sessionStatus]);
 
     React.useEffect(() => {
         if (sessionStatus !== "in_progress" || !isJoined || !roomId || sessionNumericId) {
@@ -970,24 +1056,8 @@ function InterviewPageContent() {
                                         </button>
                                     </NoiseBackground>
 
-                                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                                        <NoiseBackground
-                                            containerClassName="w-full rounded-xl"
-                                            gradientColors={[
-                                                "rgb(14, 116, 244)",
-                                                "rgb(37, 99, 235)",
-                                                "rgb(6, 182, 212)",
-                                            ]}
-                                        >
-                                            <button
-                                                type="button"
-                                                onClick={() => void executeHostAction("next")}
-                                                disabled={nextDisabled}
-                                                className="h-9 w-full cursor-pointer rounded-xl bg-linear-to-r from-blue-50 via-cyan-50 to-white px-3 py-2 text-sm font-semibold text-blue-900 shadow-[0px_2px_0px_0px_var(--color-slate-50)_inset,0px_0.5px_1px_0px_var(--color-blue-300)] transition-all duration-150 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
-                                            >
-                                                Siguiente ronda
-                                            </button>
-                                        </NoiseBackground>
+                                    <div className="mt-3 space-y-2">
+                                        
 
                                         <NoiseBackground
                                             containerClassName="w-full rounded-xl"
