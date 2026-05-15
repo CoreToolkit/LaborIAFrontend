@@ -8,7 +8,6 @@ import {
   MessageSquare,
   TrendingUp,
   MapPin,
-  Settings,
   LogOut,
   X,
 } from 'lucide-react';
@@ -28,9 +27,7 @@ const navigation = [
   { name: 'Plan de Mejora', href: '/plan', icon: MapPin },
 ];
 
-const secondaryNavigation = [
-  { name: 'Configuración', href: '/settings', icon: Settings },
-];
+const secondaryNavigation: { name: string; href: string; icon: React.ElementType }[] = [];
 
 export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const router = useRouter();
@@ -107,32 +104,6 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
               </ul>
             </div>
 
-            {/* System Menu */}
-            <div>
-              <h3 className="px-3 text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">
-                Sistema
-              </h3>
-              <ul className="space-y-1">
-                {secondaryNavigation.map((item) => {
-                  const isActive = router.pathname === item.href;
-                  return (
-                    <li key={item.name}>
-                      <Link
-                        href={item.href}
-                        className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600/30 ${
-                          isActive
-                            ? 'bg-blue-50 text-blue-600'
-                            : 'text-slate-700 hover:bg-slate-100'
-                        }`}
-                      >
-                        <item.icon className="h-5 w-5" />
-                        <span>{item.name}</span>
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
           </div>
 
           {/* Logout button */}
