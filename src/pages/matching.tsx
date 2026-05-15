@@ -196,7 +196,7 @@ function MatchingContent() {
       query.set("role_name", roleName);
     }
 
-    router.push(`/interviewPageRole?${query.toString()}`);
+    router.push(`/interview?${query.toString()}`);
   };
 
   const handleViewRoleDetail = (roleId: string) => {

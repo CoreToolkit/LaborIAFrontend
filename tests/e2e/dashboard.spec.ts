@@ -1,11 +1,12 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
+import { setAuthTokens } from "./helpers/auth";
 
 const recommendationsPayload = [
   {
     role_id: "backend-jr",
     role_name: "Backend Developer Jr.",
-    match_score: 78.5,
+    total_score: 78.5,
     description: "Construye APIs y servicios backend.",
     category: "backend",
     seniority_level: "junior",
@@ -20,7 +21,7 @@ const recommendationsPayload = [
   {
     role_id: "frontend-jr",
     role_name: "Frontend Developer Jr.",
-    match_score: 74.2,
+    total_score: 74.2,
     description: "Desarrolla interfaces web responsivas.",
     category: "frontend",
     seniority_level: "junior",
@@ -35,7 +36,7 @@ const recommendationsPayload = [
   {
     role_id: "data-jr",
     role_name: "Data Analyst Jr.",
-    match_score: 69.1,
+    total_score: 69.1,
     description: "Analiza informacion para decisiones de negocio.",
     category: "data",
     seniority_level: "junior",
@@ -99,50 +100,51 @@ async function mockDashboardApis(page: Page) {
       body: JSON.stringify(recommendationsPayload),
     });
   });
+
+  await page.route("**/api/evaluations/history**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([]),
+    });
+  });
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => {
-    window.localStorage.setItem("access_token", "e2e-token");
-    window.localStorage.setItem("refresh_token", "e2e-refresh");
-  });
-
+  await setAuthTokens(page);
   await mockDashboardApis(page);
 });
 
-test("shows recommended roles on dashboard", async ({ page }) => {
+test("shows welcome heading and quick action cards", async ({ page }) => {
   await page.goto("/dashboard");
 
-  await expect(page.getByRole("heading", { name: "Top roles para ti" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Backend Developer Jr." })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Frontend Developer Jr." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Bienvenido/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Mi Perfil Profesional" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Matching de Roles" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Simulación de Entrevista" })).toBeVisible();
 });
 
-test("filters recommendations by backend category", async ({ page }) => {
+test("shows resumen de matching section with stats", async ({ page }) => {
   await page.goto("/dashboard");
 
-  await page.getByLabel("Filtrar por categoria").selectOption("backend");
-
-  await expect(page.getByRole("heading", { name: "Backend Developer Jr." })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Frontend Developer Jr." })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Resumen de Matching" })).toBeVisible();
+  await expect(page.getByText("Roles afines").first()).toBeVisible();
+  await expect(page.getByText("Match promedio").first()).toBeVisible();
+  await expect(page.getByText("Mejor rol actual").first()).toBeVisible();
 });
 
-test("starts interview preparation from role card", async ({ page }) => {
+test("navigates to matching roles page", async ({ page }) => {
   await page.goto("/dashboard");
 
-  await page.getByRole("button", { name: "Start Interview Preparation" }).first().click();
+  await page.getByRole("button", { name: "Ir a Matching Roles" }).click();
 
-  await expect(page).toHaveURL(/\/interview\/start\?role_id=/);
+  await expect(page).toHaveURL(/\/matching/);
 });
 
-test("shows match explanation tooltip on hover", async ({ page }) => {
+test("navigates to profile on edit click", async ({ page }) => {
   await page.goto("/dashboard");
 
-  await page.getByRole("button", { name: "Explicacion del match score" }).first().hover();
+  await page.getByRole("button", { name: "Editar" }).click();
 
-  await expect(
-    page.getByText(
-      "Tu match score considera: Skills tecnicas (40%), Experiencia laboral (30%), Educacion (20%), Preferencias de trabajo (10%)."
-    )
-  ).toBeVisible();
+  await expect(page).toHaveURL(/\/profile/);
 });

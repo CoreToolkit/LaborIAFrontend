@@ -23,7 +23,7 @@ const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Mi Perfil Profesional', href: '/profile', icon: UserCircle },
   { name: 'Matching Roles', href: '/matching', icon: Target },
-  { name: 'Simulador Entrevista', href: '/interviewPageEnter', icon: MessageSquare },
+  { name: 'Simulador Entrevista', href: '/interview', icon: MessageSquare },
   { name: 'Métricas de Progreso', href: '/progress', icon: TrendingUp },
   { name: 'Plan de Mejora', href: '/plan', icon: MapPin },
 ];
