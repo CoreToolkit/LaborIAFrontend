@@ -37,7 +37,10 @@ type UseGroupInterviewAnswerFlowParams = {
   roomId: string;
   activeRoundId: string | null;
   ttsStatus: TTSAudioStatus;
-  isSelectedUser: boolean;
+  /** ID del usuario autenticado en esta sesión. */
+  selfId: string;
+  /** ID del participante seleccionado para responder esta ronda (null en intro). */
+  assignedUserId: string | null;
 };
 
 export function useGroupInterviewAnswerFlow({
@@ -48,7 +51,8 @@ export function useGroupInterviewAnswerFlow({
   roomId,
   activeRoundId,
   ttsStatus,
-  isSelectedUser,
+  selfId,
+  assignedUserId,
 }: UseGroupInterviewAnswerFlowParams) {
   const [isRecording, setIsRecording] = React.useState(false);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
@@ -111,6 +115,11 @@ export function useGroupInterviewAnswerFlow({
 
   // ─── startAnswerRecording ─────────────────────────────────────────────────
   const startAnswerRecording = React.useCallback(() => {
+    // Solo graba el participante asignado en esta ronda
+    if (!selfId || !assignedUserId || selfId !== assignedUserId) {
+      return;
+    }
+
     if (!localStreamRef.current) {
       return;
     }
@@ -211,7 +220,7 @@ export function useGroupInterviewAnswerFlow({
     };
 
     silenceMonitorRafRef.current = requestAnimationFrame(monitorSilence);
-  }, [localStreamRef]);
+  }, [localStreamRef, selfId, assignedUserId]);
 
   // ─── stopAndSubmitAnswer ──────────────────────────────────────────────────
   const stopAndSubmitAnswer = React.useCallback(() => {
@@ -286,11 +295,6 @@ export function useGroupInterviewAnswerFlow({
             body: formData,
           },
         );
-
-        if (response.status === 204) {
-          setIsSubmitting(false);
-          return;
-        }
 
         if (!response.ok) {
           if (response.status === 422) {
@@ -420,7 +424,9 @@ export function useGroupInterviewAnswerFlow({
   // ─── Trigger automático cuando el TTS termina ─────────────────────────────
   React.useEffect(() => {
     const isIntro = Boolean(currentQuestionRef.current?.isIntro);
-    if (ttsStatus !== "ended" || !activeRoundId || isIntro || !isSelectedUser) {
+    // Solo iniciar grabación automática si somos el participante asignado
+    const isAssigned = Boolean(selfId && assignedUserId && selfId === assignedUserId);
+    if (ttsStatus !== "ended" || !activeRoundId || isIntro || !isAssigned) {
       if (autoRecordTimerRef.current !== null) {
         window.clearTimeout(autoRecordTimerRef.current);
         autoRecordTimerRef.current = null;
@@ -464,7 +470,7 @@ export function useGroupInterviewAnswerFlow({
       }
       setRecordingCountdown(null);
     };
-  }, [ttsStatus, activeRoundId, isSelectedUser]);
+  }, [ttsStatus, activeRoundId, selfId, assignedUserId]);
 
   // ─── Cleanup al desmontar ─────────────────────────────────────────────────
   React.useEffect(() => {
@@ -482,5 +488,7 @@ export function useGroupInterviewAnswerFlow({
     isEvaluating,
     submissionError,
     resetForLeave,
+    startAnswerRecording,
+    stopAndSubmitAnswer,
   };
 }

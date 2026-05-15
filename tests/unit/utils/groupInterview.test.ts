@@ -26,6 +26,7 @@ describe("group interview websocket/state helpers", () => {
       text: "¿Cuál es la diferencia entre concurrencia y paralelismo?",
       targetSkill: "Python",
       difficulty: "intermediate",
+      isIntro: false,
     });
   });
 
@@ -58,6 +59,7 @@ describe("group interview websocket/state helpers", () => {
       text: "Explica el patron Repository.",
       targetSkill: "Arquitectura",
       difficulty: "advanced",
+      isIntro: false,
     });
   });
 
@@ -88,6 +90,7 @@ describe("group interview websocket/state helpers", () => {
       text: "¿Cuál es la diferencia entre concurrencia y paralelismo?",
       targetSkill: "Python",
       difficulty: "intermediate",
+      isIntro: false,
     });
   });
 
@@ -126,6 +129,7 @@ describe("group interview websocket/state helpers", () => {
         roundIndex: null,
         totalRounds: 0,
         question: null,
+        assignedUserId: null,
       },
       {
         event: "round_started",
@@ -161,19 +165,21 @@ describe("group interview websocket/state helpers", () => {
       roundId: "round-1",
       roundIndex: 1,
       totalRounds: 1,
+      assignedUserId: null,
       question: {
         roundId: "round-1",
         roundIndex: 1,
         text: "Pregunta original",
         targetSkill: "Python",
         difficulty: "intermediate",
+        isIntro: false,
       },
     };
 
     const dedupeReject = () => false;
 
     const next = applyGroupInterviewEvent(
-      current,
+      { ...current, assignedUserId: null },
       {
         event: "question_generated",
         round_id: "round-1",
@@ -183,6 +189,6 @@ describe("group interview websocket/state helpers", () => {
       dedupeReject,
     );
 
-    expect(next).toEqual(current);
+    expect(next).toEqual({ ...current, assignedUserId: null });
   });
 });

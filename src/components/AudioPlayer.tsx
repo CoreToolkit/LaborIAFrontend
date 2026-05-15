@@ -12,8 +12,6 @@ export interface AudioPlayerQuestion {
   note?: string;
   targetSkill?: string | null;
   isIntro?: boolean;
-  selectedUserId?: number | null;
-  selectedUserName?: string | null;
 }
 
 interface AudioPlayerProps {

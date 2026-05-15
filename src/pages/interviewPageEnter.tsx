@@ -99,6 +99,8 @@ function InterviewPageContent() {
     const [isHost, setIsHost] = React.useState(false);
     const [runningAction, setRunningAction] = React.useState<GroupInterviewAction | null>(null);
     const [sessionNumericId, setSessionNumericId] = React.useState<number | null>(null);
+    /** ID del participante al que fue asignada la ronda actual (null en intro o sin asignar). */
+    const [assignedUserId, setAssignedUserId] = React.useState<string | null>(null);
 
     const socketRef = React.useRef<WebSocket | null>(null);
     const localStreamRef = React.useRef<MediaStream | null>(null);
@@ -120,6 +122,8 @@ function InterviewPageContent() {
     const sessionStatusRef = React.useRef<string>("idle");
     const totalRoundsRef = React.useRef<number>(0);
     const currentQuestionRef = React.useRef<AudioPlayerQuestion | null>(null);
+    /** Ref que siempre refleja el assignedUserId más reciente para acceso estable en closures. */
+    const assignedUserIdRef = React.useRef<string | null>(null);
 
     const {
         ttsStatus,
@@ -142,33 +146,6 @@ function InterviewPageContent() {
         clearParticipantsAndAudio,
     } = useInterviewRoomAudioParticipants();
 
-    const introQuestion = React.useMemo<AudioPlayerQuestion>(() => {
-        const readableRoleName = roleDisplayName?.trim() || roleNameFromQuery || roleId || "el rol seleccionado";
-
-        return {
-            id: roleId ? `intro-${roleId}` : "intro-general",
-            text: `Vamos a realizar una entrevista enfocada en el rol ${readableRoleName}. Hablaremos sobre tu experiencia, los retos mas comunes del rol y como abordarias situaciones reales.`,
-            note: "Introduccion inicial antes de la primera pregunta.",
-            isIntro: true,
-        };
-    }, [roleDisplayName, roleId, roleNameFromQuery]);
-
-    const fallbackQuestion = React.useMemo<AudioPlayerQuestion>(() => {
-        return {
-            id: "idle-intro",
-            text: "Cuando la entrevista inicie, veras una introduccion breve y luego las preguntas de la ronda.",
-            note: "Sala lista para iniciar la entrevista.",
-            isIntro: false,
-        };
-    }, []);
-
-    const activeQuestion = currentQuestion
-        || (sessionStatus === "in_progress" ? introQuestion : fallbackQuestion);
-    const isIntroRound = Boolean(activeQuestion?.isIntro);
-    const selectedUserLabel = activeQuestion?.selectedUserName || null;
-    const selectedUserId = activeQuestion?.selectedUserId ?? null;
-    const isSelectedUser = selectedUserId !== null && String(selectedUserId) === selfId;
-
     const {
         isRecording,
         isSubmitting,
@@ -178,6 +155,8 @@ function InterviewPageContent() {
         isEvaluating,
         submissionError,
         resetForLeave: resetAnswerFlowForLeave,
+        startAnswerRecording,
+        stopAndSubmitAnswer,
     } = useGroupInterviewAnswerFlow({
         localStreamRef,
         activeRoundIdRef,
@@ -186,7 +165,8 @@ function InterviewPageContent() {
         roomId,
         activeRoundId,
         ttsStatus,
-        isSelectedUser,
+        selfId: selfId ? String(selfId) : "",
+        assignedUserId,
     });
 
     // Las refs se actualizan directamente en el handler del WebSocket (mismo tick de JS),
@@ -452,6 +432,8 @@ function InterviewPageContent() {
         handleTTSRoundStarted,
         handleQuestionAudioReady,
         handleTtsError,
+        assignedUserIdRef,
+        setAssignedUserId,
     });
 
     const {
@@ -463,12 +445,14 @@ function InterviewPageContent() {
         sessionStatusRef,
         totalRoundsRef,
         currentQuestionRef,
+        assignedUserIdRef,
         setIsSyncingState,
         setSessionStatus,
         setActiveRoundId,
         setActiveRoundIndex,
         setTotalRounds,
         setCurrentQuestion,
+        setAssignedUserId,
     });
 
     const {
@@ -513,6 +497,8 @@ function InterviewPageContent() {
         sessionStatusRef.current = "idle";
         totalRoundsRef.current = 0;
         currentQuestionRef.current = null;
+        assignedUserIdRef.current = null;
+        setAssignedUserId(null);
         resetAnswerFlowForLeave();
 
         selfIdRef.current = "";
@@ -751,6 +737,30 @@ function InterviewPageContent() {
         };
     }, [accessToken, roleId, roleNameFromQuery]);
 
+    const introQuestion = React.useMemo<AudioPlayerQuestion>(() => {
+        const readableRoleName = roleDisplayName?.trim() || roleNameFromQuery || roleId || "el rol seleccionado";
+
+        return {
+            id: roleId ? `intro-${roleId}` : "intro-general",
+            text: `Vamos a realizar una entrevista enfocada en el rol ${readableRoleName}. Hablaremos sobre tu experiencia, los retos mas comunes del rol y como abordarias situaciones reales.`,
+            note: "Introduccion inicial antes de la primera pregunta.",
+            isIntro: true,
+        };
+    }, [roleDisplayName, roleId, roleNameFromQuery]);
+
+    const fallbackQuestion = React.useMemo<AudioPlayerQuestion>(() => {
+        return {
+            id: "idle-intro",
+            text: "Cuando la entrevista inicie, veras una introduccion breve y luego las preguntas de la ronda.",
+            note: "Sala lista para iniciar la entrevista.",
+            isIntro: false,
+        };
+    }, []);
+
+    const activeQuestion = currentQuestion
+        || (sessionStatus === "in_progress" ? introQuestion : fallbackQuestion);
+    const isIntroRound = Boolean(activeQuestion?.isIntro);
+
     React.useEffect(() => {
         if (sessionStatus !== "in_progress" || !isJoined || !roomId || sessionNumericId) {
             return;
@@ -937,9 +947,6 @@ function InterviewPageContent() {
                                 <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
                                     ID: {activeRoundId || "--"}
                                 </span>
-                                <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
-                                    Seleccionado: {selectedUserLabel || (selectedUserId ? `Usuario ${selectedUserId}` : "--")}
-                                </span>
                             </div>
 
                             {isJoined && isHost ? (
@@ -1013,79 +1020,113 @@ function InterviewPageContent() {
                         </div>
                     </section>
 
-                    {activeRoundId && isSelectedUser && (
+                    {activeRoundId && !isIntroRound && (
+                        <section className="grid grid-cols-1 gap-4">
+                            {/* Banner: participante asignado */}
+                            {assignedUserId ? (
+                                selfId && String(selfId) === String(assignedUserId) ? (
+                                    <div className="flex items-center gap-3 rounded-2xl border-2 border-emerald-400 bg-emerald-50 px-4 py-3 shadow-sm">
+                                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white text-lg">🎤</span>
+                                        <div>
+                                            <p className="text-sm font-bold text-emerald-800">¡Es tu turno!</p>
+                                            <p className="text-xs text-emerald-700">Esta pregunta es para ti. Prepárate para responder cuando el audio termine.</p>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-300 text-slate-700 text-lg">👁</span>
+                                        <div>
+                                            <p className="text-sm font-semibold text-slate-700">Escucha activa</p>
+                                            <p className="text-xs text-slate-500">Esta pregunta está dirigida a otro participante. Escucha y aprende de su respuesta.</p>
+                                        </div>
+                                    </div>
+                                )
+                            ) : null}
+
+                            {/* Sección de respuesta: solo para el participante asignado */}
+                            {selfId && assignedUserId && String(selfId) === String(assignedUserId) && (
+                                <article className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+                                    <div className="mb-3 flex items-center gap-2 text-rose-800">
+                                        <AudioLines className="h-4 w-4" />
+                                        <h2 className="text-sm font-semibold uppercase tracking-wide">
+                                            {`Ronda ${(activeRoundIndex ?? 0) + 1} — Tu respuesta`}
+                                        </h2>
+                                    </div>
+                                    {currentQuestion && (
+                                        <p className="mb-4 text-sm text-rose-700">{currentQuestion.text}</p>
+                                    )}
+                                    {recordingCountdown !== null && !isRecording && (
+                                        <p className="mb-2 text-sm font-medium text-rose-600">
+                                            Grabación automática en {recordingCountdown}s…
+                                        </p>
+                                    )}
+                                    {isRecording && (
+                                        <div className="flex items-center gap-2 mb-3">
+                                            <span className="inline-block h-2.5 w-2.5 rounded-full bg-rose-500 animate-pulse" />
+                                            <p className="text-sm font-medium text-rose-700">Grabando tu respuesta…</p>
+                                        </div>
+                                    )}
+                                    {!isRecording && !isSubmitting && !transcription && (
+                                        <div className="flex gap-2 mt-2">
+                                            <button
+                                                type="button"
+                                                onClick={startAnswerRecording}
+                                                className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 transition disabled:opacity-50"
+                                                disabled={isSubmitting || isEvaluating}
+                                            >
+                                                <Mic className="inline h-4 w-4 mr-1" /> Grabar respuesta
+                                            </button>
+                                        </div>
+                                    )}
+                                    {isRecording && (
+                                        <button
+                                            type="button"
+                                            onClick={stopAndSubmitAnswer}
+                                            className="mt-2 rounded-lg bg-rose-800 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-900 transition"
+                                        >
+                                            <MicOff className="inline h-4 w-4 mr-1" /> Detener y enviar
+                                        </button>
+                                    )}
+                                    {isSubmitting && (
+                                        <p className="mt-3 text-sm text-rose-600">Enviando audio…</p>
+                                    )}
+                                    {isEvaluating && !isSubmitting && (
+                                        <p className="mt-3 text-sm text-rose-600">Evaluando respuesta…</p>
+                                    )}
+                                    {submissionError && (
+                                        <p className="mt-3 text-sm font-medium text-red-600">Error: {submissionError}</p>
+                                    )}
+                                    {transcription && (
+                                        <div className="mt-3 rounded-xl border border-rose-200 bg-white p-3">
+                                            <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">Tu respuesta</p>
+                                            <p className="mt-0.5 text-sm text-rose-800 italic">"{transcription}"</p>
+                                        </div>
+                                    )}
+                                    {evaluationResult && (
+                                        <div className="mt-2 rounded-xl border border-rose-300 bg-white p-3 space-y-2">
+                                            <p className="text-sm font-semibold text-rose-800">
+                                                Puntuación: {evaluationResult.score ?? "—"}
+                                            </p>
+                                            {evaluationResult.feedback && (
+                                                <p className="text-sm text-rose-700">{evaluationResult.feedback}</p>
+                                            )}
+                                        </div>
+                                    )}
+                                </article>
+                            )}
+                        </section>
+                    )}
+
+                    {activeRoundId && isIntroRound && (
                         <section className="grid grid-cols-1 gap-4">
                             <article className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
                                 <div className="mb-3 flex items-center gap-2 text-rose-800">
                                     <AudioLines className="h-4 w-4" />
-                                    <h2 className="text-sm font-semibold uppercase tracking-wide">
-                                        {isIntroRound
-                                            ? "Introduccion a la entrevista"
-                                            : `Ronda ${(activeRoundIndex ?? 0) + 1} — Tu respuesta`
-                                        }
-                                    </h2>
+                                    <h2 className="text-sm font-semibold uppercase tracking-wide">Introduccion a la entrevista</h2>
                                 </div>
                                 {currentQuestion && (
                                     <p className="mb-4 text-sm text-rose-700">{currentQuestion.text}</p>
                                 )}
-                                {recordingCountdown !== null && !isRecording && (
-                                    <p className="mb-2 text-sm font-medium text-rose-600">
-                                        Grabación automática en {recordingCountdown}s…
-                                    </p>
-                                )}
-                                {isRecording && (
-                                    <div className="flex items-center gap-2 mb-3">
-                                        <span className="inline-block h-2.5 w-2.5 rounded-full bg-rose-500 animate-pulse" />
-                                        <p className="text-sm font-medium text-rose-700">Grabando tu respuesta…</p>
-                                    </div>
-                                )}
-                                {isSubmitting && (
-                                    <p className="mt-3 text-sm text-rose-600">Enviando audio…</p>
-                                )}
-                                {isEvaluating && !isSubmitting && (
-                                    <p className="mt-3 text-sm text-rose-600">Evaluando respuesta…</p>
-                                )}
-                                {submissionError && (
-                                    <p className="mt-3 text-sm font-medium text-red-600">Error: {submissionError}</p>
-                                )}
-                                {transcription && (
-                                    <div className="mt-3 rounded-xl border border-rose-200 bg-white p-3">
-                                        <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">Tu respuesta</p>
-                                        <p className="mt-0.5 text-sm text-rose-800 italic">"{transcription}"</p>
-                                    </div>
-                                )}
-                                {evaluationResult && (
-                                    <div className="mt-2 rounded-xl border border-rose-300 bg-white p-3 space-y-2">
-                                        <p className="text-sm font-semibold text-rose-800">
-                                            Puntuación: {evaluationResult.score ?? "—"}
-                                        </p>
-                                        {evaluationResult.feedback && (
-                                            <p className="text-sm text-rose-700">{evaluationResult.feedback}</p>
-                                        )}
-                                    </div>
-                                )}
-                            </article>
-                        </section>
-                    )}
-
-                    {activeRoundId && !isSelectedUser && (
-                        <section className="grid grid-cols-1 gap-4">
-                            <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                                <div className="mb-2 flex items-center gap-2 text-slate-700">
-                                    <AudioLines className="h-4 w-4" />
-                                    <h2 className="text-sm font-semibold uppercase tracking-wide">
-                                        {isIntroRound
-                                            ? "Introduccion a la entrevista"
-                                            : "Esperando respuesta"
-                                        }
-                                    </h2>
-                                </div>
-                                <p className="text-sm text-slate-600">
-                                    {selectedUserLabel
-                                        ? `En esta ronda responde ${selectedUserLabel}.`
-                                        : "En esta ronda responde otro participante."
-                                    }
-                                </p>
                             </article>
                         </section>
                     )}

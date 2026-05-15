@@ -22,10 +22,9 @@ type SignalingMessage = {
   target_skill?: string;
   difficulty?: string;
   is_intro?: boolean;
-  selected_user_id?: number | string;
-  selected_user_name?: string;
   status?: string;
   evaluation_id?: string;
+  assigned_user_id?: number | string | null;
 };
 
 type UseInterviewRoomSocketMessageHandlerArgs = {
@@ -58,6 +57,8 @@ type UseInterviewRoomSocketMessageHandlerArgs = {
   handleTTSRoundStarted: (roundId: string | null) => void;
   handleQuestionAudioReady: (payload: QuestionAudioReadyPayload) => void;
   handleTtsError: (payload: TtsErrorPayload) => void;
+  assignedUserIdRef: React.MutableRefObject<string | null>;
+  setAssignedUserId: React.Dispatch<React.SetStateAction<string | null>>;
 };
 
 export function useInterviewRoomSocketMessageHandler({
@@ -82,6 +83,8 @@ export function useInterviewRoomSocketMessageHandler({
   handleTTSRoundStarted,
   handleQuestionAudioReady,
   handleTtsError,
+  assignedUserIdRef,
+  setAssignedUserId,
 }: UseInterviewRoomSocketMessageHandlerArgs) {
   const handleSocketMessage = React.useCallback((event: MessageEvent, sessionUserId: string) => {
     if (event.data instanceof ArrayBuffer) {
@@ -173,10 +176,9 @@ export function useInterviewRoomSocketMessageHandler({
             targetSkill: null,
             difficulty: null,
             isIntro: currentQuestionRef.current.isIntro ?? false,
-            selectedUserId: currentQuestionRef.current.selectedUserId ?? null,
-            selectedUserName: currentQuestionRef.current.selectedUserName ?? null,
           }
           : null,
+        assignedUserId: assignedUserIdRef.current,
       },
       payload,
       shouldProcessRoundEvent,
@@ -203,6 +205,11 @@ export function useInterviewRoomSocketMessageHandler({
         totalRoundsRef.current = nextState.totalRounds;
       }
 
+      if (nextState.assignedUserId !== assignedUserIdRef.current) {
+        assignedUserIdRef.current = nextState.assignedUserId;
+        setAssignedUserId(nextState.assignedUserId);
+      }
+
       setSessionStatus(nextState.status);
       setActiveRoundId(nextState.roundId);
       setActiveRoundIndex(nextState.roundIndex);
@@ -210,7 +217,6 @@ export function useInterviewRoomSocketMessageHandler({
 
       if (nextState.question) {
         const isIntro = nextState.question.isIntro;
-        const selectedUserName = nextState.question.selectedUserName;
         const nextQuestion: AudioPlayerQuestion = {
           id: nextState.question.roundId || `round-${nextState.question.roundIndex ?? "active"}`,
           text: nextState.question.text,
@@ -219,8 +225,6 @@ export function useInterviewRoomSocketMessageHandler({
             : `Skill objetivo: ${nextState.question.targetSkill ?? "General"} | Dificultad: ${nextState.question.difficulty ?? "N/A"}`,
           targetSkill: nextState.question.targetSkill ?? null,
           isIntro,
-          selectedUserId: nextState.question.selectedUserId ?? null,
-          selectedUserName: selectedUserName ?? null,
         };
         currentQuestionRef.current = nextQuestion;
         setCurrentQuestion(nextQuestion);
@@ -318,6 +322,7 @@ export function useInterviewRoomSocketMessageHandler({
     activeRoundIdRef,
     activeRoundIndexRef,
     appendChunkForSender,
+    assignedUserIdRef,
     cleanupSenderPlayer,
     currentQuestionRef,
     handleQuestionAudioReady,
@@ -330,6 +335,7 @@ export function useInterviewRoomSocketMessageHandler({
     sessionStatusRef,
     setActiveRoundId,
     setActiveRoundIndex,
+    setAssignedUserId,
     setCurrentQuestion,
     setSessionStatus,
     setTotalRounds,

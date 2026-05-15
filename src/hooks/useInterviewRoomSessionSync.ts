@@ -9,12 +9,14 @@ type UseInterviewRoomSessionSyncArgs = {
   sessionStatusRef: React.MutableRefObject<string>;
   totalRoundsRef: React.MutableRefObject<number>;
   currentQuestionRef: React.MutableRefObject<AudioPlayerQuestion | null>;
+  assignedUserIdRef: React.MutableRefObject<string | null>;
   setIsSyncingState: React.Dispatch<React.SetStateAction<boolean>>;
   setSessionStatus: React.Dispatch<React.SetStateAction<string>>;
   setActiveRoundId: React.Dispatch<React.SetStateAction<string | null>>;
   setActiveRoundIndex: React.Dispatch<React.SetStateAction<number | null>>;
   setTotalRounds: React.Dispatch<React.SetStateAction<number>>;
   setCurrentQuestion: React.Dispatch<React.SetStateAction<AudioPlayerQuestion | null>>;
+  setAssignedUserId: React.Dispatch<React.SetStateAction<string | null>>;
 };
 
 export function useInterviewRoomSessionSync({
@@ -24,12 +26,14 @@ export function useInterviewRoomSessionSync({
   sessionStatusRef,
   totalRoundsRef,
   currentQuestionRef,
+  assignedUserIdRef,
   setIsSyncingState,
   setSessionStatus,
   setActiveRoundId,
   setActiveRoundIndex,
   setTotalRounds,
   setCurrentQuestion,
+  setAssignedUserId,
 }: UseInterviewRoomSessionSyncArgs) {
   const syncRoomState = React.useCallback(async (headers: HeadersInit, sessionCode: string) => {
     const backendHttpOrigin = backendHttpOriginRef.current;
@@ -59,6 +63,12 @@ export function useInterviewRoomSessionSync({
       sessionStatusRef.current = restored.status;
       totalRoundsRef.current = restored.totalRounds;
 
+      // Sincronizar assignedUserId de la ronda activa
+      if (restored.assignedUserId !== assignedUserIdRef.current) {
+        assignedUserIdRef.current = restored.assignedUserId;
+        setAssignedUserId(restored.assignedUserId);
+      }
+
       setSessionStatus(restored.status);
       setActiveRoundId(restored.roundId);
       setActiveRoundIndex(restored.roundIndex);
@@ -73,9 +83,6 @@ export function useInterviewRoomSessionSync({
           text: restored.question.text,
           note: `Skill objetivo: ${skill} | Dificultad: ${difficulty}`,
           targetSkill: restored.question.targetSkill ?? null,
-          isIntro: restored.question.isIntro,
-          selectedUserId: restored.question.selectedUserId ?? null,
-          selectedUserName: restored.question.selectedUserName ?? null,
         };
 
         currentQuestionRef.current = restoredQuestion;
@@ -89,11 +96,13 @@ export function useInterviewRoomSessionSync({
   }, [
     activeRoundIdRef,
     activeRoundIndexRef,
+    assignedUserIdRef,
     backendHttpOriginRef,
     currentQuestionRef,
     sessionStatusRef,
     setActiveRoundId,
     setActiveRoundIndex,
+    setAssignedUserId,
     setCurrentQuestion,
     setIsSyncingState,
     setSessionStatus,

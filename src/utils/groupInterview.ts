@@ -7,8 +7,6 @@ export type GroupInterviewQuestion = {
   targetSkill: string | null;
   difficulty: string | null;
   isIntro: boolean;
-  selectedUserId: number | null;
-  selectedUserName: string | null;
 };
 
 export type GroupInterviewUiState = {
@@ -17,6 +15,7 @@ export type GroupInterviewUiState = {
   roundIndex: number | null;
   totalRounds: number;
   question: GroupInterviewQuestion | null;
+  assignedUserId: string | null;
 };
 
 export type GroupInterviewEventPayload = {
@@ -27,9 +26,8 @@ export type GroupInterviewEventPayload = {
   target_skill?: string;
   difficulty?: string;
   is_intro?: boolean;
-  selected_user_id?: number | string;
-  selected_user_name?: string;
   status?: string;
+  assigned_user_id?: number | string | null;
 };
 
 export type QuestionAudioReadyPayload = {
@@ -39,8 +37,6 @@ export type QuestionAudioReadyPayload = {
   audio_b64: string;
   question_text?: string;
   is_intro?: boolean;
-  selected_user_id?: number | string;
-  selected_user_name?: string;
   session_code?: string;
   emitted_at?: string;
 };
@@ -52,8 +48,6 @@ export type TtsErrorPayload = {
   tts_error?: string;
   question_text?: string;
   is_intro?: boolean;
-  selected_user_id?: number | string;
-  selected_user_name?: string;
   session_code?: string;
   emitted_at?: string;
 };
@@ -88,14 +82,6 @@ const asNumber = (value: unknown): number | null => {
   }
 
   return null;
-};
-
-const asInt = (value: unknown): number | null => {
-  const num = asNumber(value);
-  if (num === null) {
-    return null;
-  }
-  return Number.isFinite(num) ? Math.trunc(num) : null;
 };
 
 const asBoolean = (value: unknown): boolean | null => {
@@ -159,8 +145,6 @@ const normalizeQuestionRecord = (
     targetSkill: asString(source.target_skill),
     difficulty: asString(source.difficulty),
     isIntro: asBoolean(source.is_intro) ?? false,
-    selectedUserId: asInt(source.selected_user_id),
-    selectedUserName: asString(source.selected_user_name),
   };
 };
 
@@ -237,6 +221,10 @@ export const applyGroupInterviewEvent = (
 
     const nextIndex = parsedRoundIndex ?? current.roundIndex;
     const nextTotal = typeof nextIndex === "number" ? Math.max(current.totalRounds, nextIndex) : current.totalRounds;
+    const nextAssignedUserId =
+      payload.assigned_user_id !== undefined
+        ? payload.assigned_user_id !== null ? String(payload.assigned_user_id) : null
+        : current.assignedUserId;
 
     return {
       ...current,
@@ -244,6 +232,7 @@ export const applyGroupInterviewEvent = (
       roundId: payload.round_id ?? current.roundId,
       roundIndex: nextIndex,
       totalRounds: nextTotal,
+      assignedUserId: nextAssignedUserId,
     };
   }
 
@@ -255,6 +244,10 @@ export const applyGroupInterviewEvent = (
 
     const nextIndex = normalizedQuestion.roundIndex ?? current.roundIndex;
     const nextTotal = typeof nextIndex === "number" ? Math.max(current.totalRounds, nextIndex) : current.totalRounds;
+    const nextAssignedUserId =
+      payload.assigned_user_id !== undefined
+        ? payload.assigned_user_id !== null ? String(payload.assigned_user_id) : null
+        : current.assignedUserId;
 
     return {
       status: "in_progress",
@@ -262,6 +255,7 @@ export const applyGroupInterviewEvent = (
       roundIndex: nextIndex,
       totalRounds: nextTotal,
       question: normalizedQuestion,
+      assignedUserId: nextAssignedUserId,
     };
   }
 
@@ -319,11 +313,20 @@ export const extractGroupInterviewUiState = (snapshot: unknown): GroupInterviewU
     }
   }
 
+  // Leer assigned_user_id desde el snapshot de reconexión
+  const assignedUserIdRaw =
+    roundContainer ? roundContainer.assigned_user_id : undefined;
+  const assignedUserId =
+    assignedUserIdRaw !== undefined && assignedUserIdRaw !== null
+      ? String(assignedUserIdRaw)
+      : null;
+
   return {
     status,
     roundId,
     roundIndex,
     totalRounds,
     question: normalizedQuestion,
+    assignedUserId,
   };
 };
