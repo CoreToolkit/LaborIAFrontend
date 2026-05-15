@@ -22,6 +22,8 @@ type SignalingMessage = {
   target_skill?: string;
   difficulty?: string;
   is_intro?: boolean;
+  selected_user_id?: number | string;
+  selected_user_name?: string;
   status?: string;
   evaluation_id?: string;
 };
@@ -171,6 +173,8 @@ export function useInterviewRoomSocketMessageHandler({
             targetSkill: null,
             difficulty: null,
             isIntro: currentQuestionRef.current.isIntro ?? false,
+            selectedUserId: currentQuestionRef.current.selectedUserId ?? null,
+            selectedUserName: currentQuestionRef.current.selectedUserName ?? null,
           }
           : null,
       },
@@ -206,6 +210,7 @@ export function useInterviewRoomSocketMessageHandler({
 
       if (nextState.question) {
         const isIntro = nextState.question.isIntro;
+        const selectedUserName = nextState.question.selectedUserName;
         const nextQuestion: AudioPlayerQuestion = {
           id: nextState.question.roundId || `round-${nextState.question.roundIndex ?? "active"}`,
           text: nextState.question.text,
@@ -214,6 +219,8 @@ export function useInterviewRoomSocketMessageHandler({
             : `Skill objetivo: ${nextState.question.targetSkill ?? "General"} | Dificultad: ${nextState.question.difficulty ?? "N/A"}`,
           targetSkill: nextState.question.targetSkill ?? null,
           isIntro,
+          selectedUserId: nextState.question.selectedUserId ?? null,
+          selectedUserName: selectedUserName ?? null,
         };
         currentQuestionRef.current = nextQuestion;
         setCurrentQuestion(nextQuestion);

@@ -37,6 +37,7 @@ type UseGroupInterviewAnswerFlowParams = {
   roomId: string;
   activeRoundId: string | null;
   ttsStatus: TTSAudioStatus;
+  isSelectedUser: boolean;
 };
 
 export function useGroupInterviewAnswerFlow({
@@ -47,6 +48,7 @@ export function useGroupInterviewAnswerFlow({
   roomId,
   activeRoundId,
   ttsStatus,
+  isSelectedUser,
 }: UseGroupInterviewAnswerFlowParams) {
   const [isRecording, setIsRecording] = React.useState(false);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
@@ -285,6 +287,11 @@ export function useGroupInterviewAnswerFlow({
           },
         );
 
+        if (response.status === 204) {
+          setIsSubmitting(false);
+          return;
+        }
+
         if (!response.ok) {
           if (response.status === 422) {
             throw new Error("No se detectó voz en tu respuesta. Habla más cerca del micrófono e intenta de nuevo.");
@@ -413,7 +420,7 @@ export function useGroupInterviewAnswerFlow({
   // ─── Trigger automático cuando el TTS termina ─────────────────────────────
   React.useEffect(() => {
     const isIntro = Boolean(currentQuestionRef.current?.isIntro);
-    if (ttsStatus !== "ended" || !activeRoundId || isIntro) {
+    if (ttsStatus !== "ended" || !activeRoundId || isIntro || !isSelectedUser) {
       if (autoRecordTimerRef.current !== null) {
         window.clearTimeout(autoRecordTimerRef.current);
         autoRecordTimerRef.current = null;
@@ -457,7 +464,7 @@ export function useGroupInterviewAnswerFlow({
       }
       setRecordingCountdown(null);
     };
-  }, [ttsStatus, activeRoundId]);
+  }, [ttsStatus, activeRoundId, isSelectedUser]);
 
   // ─── Cleanup al desmontar ─────────────────────────────────────────────────
   React.useEffect(() => {

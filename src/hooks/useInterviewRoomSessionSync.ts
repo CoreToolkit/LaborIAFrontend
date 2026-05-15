@@ -73,6 +73,9 @@ export function useInterviewRoomSessionSync({
           text: restored.question.text,
           note: `Skill objetivo: ${skill} | Dificultad: ${difficulty}`,
           targetSkill: restored.question.targetSkill ?? null,
+          isIntro: restored.question.isIntro,
+          selectedUserId: restored.question.selectedUserId ?? null,
+          selectedUserName: restored.question.selectedUserName ?? null,
         };
 
         currentQuestionRef.current = restoredQuestion;

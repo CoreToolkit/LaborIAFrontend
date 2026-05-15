@@ -7,6 +7,8 @@ export type GroupInterviewQuestion = {
   targetSkill: string | null;
   difficulty: string | null;
   isIntro: boolean;
+  selectedUserId: number | null;
+  selectedUserName: string | null;
 };
 
 export type GroupInterviewUiState = {
@@ -25,6 +27,8 @@ export type GroupInterviewEventPayload = {
   target_skill?: string;
   difficulty?: string;
   is_intro?: boolean;
+  selected_user_id?: number | string;
+  selected_user_name?: string;
   status?: string;
 };
 
@@ -35,6 +39,8 @@ export type QuestionAudioReadyPayload = {
   audio_b64: string;
   question_text?: string;
   is_intro?: boolean;
+  selected_user_id?: number | string;
+  selected_user_name?: string;
   session_code?: string;
   emitted_at?: string;
 };
@@ -46,6 +52,8 @@ export type TtsErrorPayload = {
   tts_error?: string;
   question_text?: string;
   is_intro?: boolean;
+  selected_user_id?: number | string;
+  selected_user_name?: string;
   session_code?: string;
   emitted_at?: string;
 };
@@ -80,6 +88,14 @@ const asNumber = (value: unknown): number | null => {
   }
 
   return null;
+};
+
+const asInt = (value: unknown): number | null => {
+  const num = asNumber(value);
+  if (num === null) {
+    return null;
+  }
+  return Number.isFinite(num) ? Math.trunc(num) : null;
 };
 
 const asBoolean = (value: unknown): boolean | null => {
@@ -143,6 +159,8 @@ const normalizeQuestionRecord = (
     targetSkill: asString(source.target_skill),
     difficulty: asString(source.difficulty),
     isIntro: asBoolean(source.is_intro) ?? false,
+    selectedUserId: asInt(source.selected_user_id),
+    selectedUserName: asString(source.selected_user_name),
   };
 };
 
