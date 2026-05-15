@@ -22,7 +22,7 @@ export function ProfileInfoTab({ profile, onEditPersonalInfo }: Props) {
         </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
         <div className="flex items-start gap-3">
           <Mail className="w-5 h-5 text-slate-400 mt-0.5" />
           <div>

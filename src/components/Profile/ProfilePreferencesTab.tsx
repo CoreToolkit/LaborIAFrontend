@@ -20,7 +20,7 @@ export function ProfilePreferencesTab({ profile, onEditPreferences }: Props) {
       </div>
 
       {profile.preferencias ? (
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
           {profile.preferencias.cargo && (
             <div>
               <p className="text-sm text-slate-500 font-medium mb-2">Cargo Deseado</p>

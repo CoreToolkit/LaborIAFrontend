@@ -174,9 +174,9 @@ function IndividualInterviewContent() {
                 </span>
               )}
             </div>
-            <Button variant="outline" size="sm" onClick={handleEndInterview} className="gap-2">
+            <Button variant="outline" size="sm" onClick={() => router.push("/dashboard")} className="gap-2">
               <LogOut className="h-4 w-4" />
-              Terminar entrevista
+              Volver al dashboard
             </Button>
           </div>
         </header>

@@ -187,8 +187,8 @@ function ProfileContent() {
               <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
                 {/* Profile avatar header */}
                 <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-8">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-4 min-w-0">
                       {imageSrc && !imageError ? (
                         <Image
                           loader={({ src }) => src}
@@ -196,22 +196,22 @@ function ProfileContent() {
                           alt={profile.nombre}
                           width={80}
                           height={80}
-                          className="w-20 h-20 rounded-full border-4 border-white shadow-lg object-cover bg-white"
+                          className="w-16 h-16 sm:w-20 sm:h-20 rounded-full border-4 border-white shadow-lg object-cover bg-white flex-shrink-0"
                           onError={() => setImageError(true)}
                           referrerPolicy="no-referrer"
                           unoptimized
                         />
                       ) : (
-                        <div className="w-20 h-20 rounded-full bg-white flex items-center justify-center border-4 border-white shadow-lg">
-                          <span className="text-2xl font-bold text-blue-600">{getInitials(profile.nombre)}</span>
+                        <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-white flex items-center justify-center border-4 border-white shadow-lg flex-shrink-0">
+                          <span className="text-xl sm:text-2xl font-bold text-blue-600">{getInitials(profile.nombre)}</span>
                         </div>
                       )}
-                      <div className="text-white">
-                        <h2 className="text-2xl font-bold">{profile.nombre}</h2>
-                        <p className="text-blue-100 text-sm mt-1">{profile.email}</p>
+                      <div className="text-white min-w-0">
+                        <h2 className="text-lg sm:text-2xl font-bold leading-tight">{profile.nombre}</h2>
+                        <p className="text-blue-100 text-sm mt-1 truncate">{profile.email}</p>
                       </div>
                     </div>
-                    <Button variant="outline" size="sm" className="bg-white text-blue-600 hover:bg-blue-50" onClick={() => setIsPersonalInfoModalOpen(true)}>
+                    <Button variant="outline" size="sm" className="bg-white text-blue-600 hover:bg-blue-50 self-start sm:self-auto flex-shrink-0" onClick={() => setIsPersonalInfoModalOpen(true)}>
                       <Edit2 className="w-4 h-4 mr-2" />
                       Editar Perfil
                     </Button>
@@ -219,20 +219,20 @@ function ProfileContent() {
                 </div>
 
                 {/* Tab navigation */}
-                <div className="border-b border-slate-200">
-                  <nav className="flex gap-8 px-6" aria-label="Profile sections">
+                <div className="border-b border-slate-200 overflow-x-auto">
+                  <nav className="flex px-4 sm:px-6 min-w-max" aria-label="Profile sections">
                     {TAB_CONFIG.map(({ id, label, Icon }) => (
                       <button
                         key={id}
                         type="button"
                         onClick={() => setActiveTab(id)}
-                        className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                        className={`py-4 px-3 sm:px-4 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap transition-colors flex-shrink-0 ${
                           activeTab === id
                             ? "border-blue-600 text-blue-600"
                             : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
                         }`}
                       >
-                        <Icon className="w-4 h-4 inline mr-2" />
+                        <Icon className="w-4 h-4 inline mr-1 sm:mr-2" />
                         {label}
                       </button>
                     ))}

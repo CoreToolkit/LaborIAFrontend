@@ -88,7 +88,7 @@ export function ProfileStatsTab({ profile }: Props) {
       ) : metrics && metrics.total_interviews > 0 ? (
         <>
           {/* KPI cards */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-2 gap-4">
             <div className="rounded-xl border border-blue-100 bg-blue-50 px-5 py-4">
               <div className="flex items-center gap-2 mb-1">
                 <BarChart2 className="w-4 h-4 text-[#3B5BDB]" />
