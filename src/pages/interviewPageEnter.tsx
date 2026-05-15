@@ -1,25 +1,18 @@
 import React from "react";
 import Head from "next/head";
 import { useRouter } from "next/router";
-import {
-    AudioLines,
-    Copy,
-    Mic,
-    MicOff,
-    LogOut,
-    Plug,
-    Radio,
-    Users,
-    UserRound,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { AudioPlayer, type AudioPlayerQuestion } from "@/components/AudioPlayer";
-import { NoiseBackground } from "@/components/ui/noise-background";
+import { type AudioPlayerQuestion } from "@/components/AudioPlayer";
 import PrivateRoute from "@/components/PrivateRoute";
 import { getAccessToken } from "@/utils/session";
 import { getRoleDetail } from "@/services/matchingService";
+import { InterviewRoomHeader } from "@/components/InterviewRoom/InterviewRoomHeader";
+import { InterviewRoomConnectionPanel } from "@/components/InterviewRoom/InterviewRoomConnectionPanel";
+import { InterviewRoomSessionPanel } from "@/components/InterviewRoom/InterviewRoomSessionPanel";
+import { InterviewRoomAnswerPanel } from "@/components/InterviewRoom/InterviewRoomAnswerPanel";
+import { InterviewRoomParticipants } from "@/components/InterviewRoom/InterviewRoomParticipants";
 import {
     ensureSessionCodeFromApi,
+    executeGroupSessionActionApi,
     fetchSessionDetailFromApi,
     getCurrentUserIdFromApi,
     mapGroupInterviewActionError,
@@ -43,9 +36,9 @@ import {
     resolveBackendWsBase,
     wrapChunkWithClientHeader,
 } from "@/utils/interviewRoom";
+import { BACKEND_URL as BACKEND_API_BASE } from "@/config/api";
 
 const BACKEND_WS_BASE = process.env.NEXT_PUBLIC_BACKEND_WS_BASE;
-const BACKEND_API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL;
 
 type SignalingMessage = {
     event: string;
@@ -240,27 +233,16 @@ function InterviewPageContent() {
             return;
         }
 
-        let endpoint = `${backendHttpOrigin}/api/group-sessions/${encodeURIComponent(sessionCode)}/start`;
-        let body: string | undefined;
-
-        if (action === "next") {
-            endpoint = `${backendHttpOrigin}/api/group-sessions/${encodeURIComponent(sessionCode)}/rounds/next`;
-            body = JSON.stringify({});
-        }
-
-        if (action === "close") {
-            endpoint = `${backendHttpOrigin}/api/group-sessions/${encodeURIComponent(sessionCode)}/close`;
-        }
-
         setRunningAction(action);
         setErrorMessage(null);
 
         try {
-            const response = await fetch(endpoint, {
-                method: "POST",
+            const response = await executeGroupSessionActionApi(
+                backendHttpOrigin,
                 headers,
-                body,
-            });
+                sessionCode,
+                action,
+            );
 
             if (!response.ok) {
                 setErrorMessage(mapGroupInterviewActionError(action, response.status));
@@ -793,346 +775,65 @@ function InterviewPageContent() {
             </Head>
 
             <div className="min-h-screen bg-linear-to-b from-slate-50 via-cyan-50 to-white">
-                <header className="border-b border-slate-200 bg-white/80 backdrop-blur">
-                    <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-                        <div className="flex items-center gap-2">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-600">
-                                <Radio className="h-5 w-5 text-white" />
-                            </div>
-                            <span className="text-xl font-semibold text-slate-900">LaborIA Entrevistas</span>
-                        </div>
-                        <Button variant="outline" size="sm" onClick={() => router.push("/dashboard")} className="gap-2">
-                            <LogOut className="h-4 w-4" />
-                            Volver al dashboard
-                        </Button>
-                    </div>
-                </header>
+                <InterviewRoomHeader onBack={() => router.push("/dashboard")} />
 
                 <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-                    <section className="mb-6 rounded-2xl border border-cyan-100 bg-linear-to-r from-cyan-700 to-blue-700 p-6 text-white shadow-sm">
-                        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-                            <div>
-                                <h1 className="text-2xl font-semibold">Sala de entrevista por audio</h1>
-                                <p className="mt-2 text-sm text-cyan-50">
-                                    Todos los participantes publican su audio al servidor y se distribuye por broadcast a los demas usuarios de la sala.
-                                </p>
-                            </div>
-                            <div className="flex items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-xs font-medium text-white">
-                                <Plug className="h-3.5 w-3.5" />
-                                {connectionStatus === "connected" && isSyncingState && "Re-sincronizando sala..."}
-                                {connectionStatus === "connected" && !isSyncingState && "Conectado"}
-                                {connectionStatus === "connecting" && "Conectando..."}
-                                {connectionStatus === "disconnected" && "Desconectado"}
-                            </div>
-                        </div>
-                    </section>
+                    <InterviewRoomConnectionPanel
+                        connectionStatus={connectionStatus}
+                        isSyncingState={isSyncingState}
+                        displayName={displayName}
+                        onDisplayNameChange={setDisplayName}
+                        roomId={roomId}
+                        onRoomIdChange={setRoomId}
+                        errorMessage={errorMessage}
+                        isJoined={isJoined}
+                        isConnecting={isConnecting}
+                        isMuted={isMuted}
+                        activeRemoteCount={activeRemoteCount}
+                        onJoinRoom={() => void joinRoom()}
+                        onLeaveRoom={() => void leaveRoom({ clearPersistedRejoin: true })}
+                        onToggleMute={toggleMute}
+                        onCopyRoomId={() => void copyRoomId()}
+                    />
 
-                    <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                        <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
-                            <div className="space-y-4 xl:col-span-8">
-                                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                                    <div>
-                                        <label htmlFor="displayName" className="mb-1.5 block text-sm font-medium text-slate-700">
-                                            Tu nombre
-                                        </label>
-                                        <input
-                                            id="displayName"
-                                            type="text"
-                                            value={displayName}
-                                            onChange={(event) => setDisplayName(event.target.value)}
-                                            placeholder="Ej: Camila Rojas"
-                                            className="h-10 w-full rounded-md border border-slate-300 px-3 text-sm text-slate-900 outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-200"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label htmlFor="roomId" className="mb-1.5 block text-sm font-medium text-slate-700">
-                                            Session Code
-                                        </label>
-                                        <div className="flex gap-2">
-                                            <input
-                                                id="roomId"
-                                                type="text"
-                                                value={roomId}
-                                                onChange={(event) => setRoomId(event.target.value)}
-                                                placeholder="Ej: ABCD1234 (vacío para crear uno nuevo)"
-                                                className="h-10 w-full rounded-md border border-slate-300 px-3 text-sm text-slate-900 outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-200"
-                                            />
-                                            <Button type="button" variant="outline" onClick={() => void copyRoomId()} className="gap-1.5">
-                                                <Copy className="h-4 w-4" />
-                                                Copiar
-                                            </Button>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {errorMessage && (
-                                    <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                                        {errorMessage}
-                                    </p>
-                                )}
-                            </div>
-
-                            <div className="rounded-xl border border-cyan-100 bg-cyan-50/60 p-4 xl:col-span-4">
-                                <p className="text-xs font-semibold uppercase tracking-wide text-cyan-700">Panel rápido</p>
-                                <div className="mt-3 space-y-2">
-                                    {!isJoined ? (
-                                        <Button
-                                            type="button"
-                                            className="h-10 w-full gap-2 bg-cyan-600 hover:bg-cyan-700"
-                                            onClick={() => void joinRoom()}
-                                            disabled={isConnecting}
-                                        >
-                                            <AudioLines className="h-4 w-4" />
-                                            {isConnecting ? "Conectando..." : "Unirme a la sala"}
-                                        </Button>
-                                    ) : (
-                                        <Button
-                                            type="button"
-                                            variant="destructive"
-                                            className="h-10 w-full gap-2"
-                                            onClick={() => void leaveRoom({ clearPersistedRejoin: true })}
-                                        >
-                                            <LogOut className="h-4 w-4" />
-                                            Salir de la sala
-                                        </Button>
-                                    )}
-
-                                    <Button type="button" variant="outline" onClick={toggleMute} disabled={!isJoined} className="h-10 w-full gap-2">
-                                        {isMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-                                        {isMuted ? "Activar microfono" : "Silenciar microfono"}
-                                    </Button>
-                                </div>
-
-                                <div className="mt-3 flex flex-wrap items-center gap-2">
-                                    <span className="rounded-full border border-cyan-200 bg-white px-3 py-1 text-xs font-medium text-cyan-700">
-                                        <Users className="mr-1 inline h-3.5 w-3.5" />
-                                        Participantes: {activeRemoteCount}
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-                    </section>
-
-                    <section className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-12">
-                        <aside className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm xl:col-span-4">
-                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Estado de sesión</p>
-                            <div className="mt-3 flex flex-wrap items-center gap-2">
-                                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">
-                                    Estado: {sessionStatus}
-                                </span>
-                                <span className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-medium text-cyan-700">
-                                    Ronda: {activeRoundIndex ?? "--"}
-                                </span>
-                                <span className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700">
-                                    Total: {totalRounds}
-                                </span>
-                                <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
-                                    ID: {activeRoundId || "--"}
-                                </span>
-                            </div>
-
-                            {isJoined && isHost ? (
-                                <div className="mt-4 space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                                    <p className="text-xs font-medium text-slate-600">Controles host</p>
-                                    <NoiseBackground
-                                        containerClassName="w-full rounded-xl"
-                                        gradientColors={[
-                                            "rgb(14, 116, 244)",
-                                            "rgb(37, 99, 235)",
-                                            "rgb(6, 182, 212)",
-                                        ]}
-                                    >
-                                        <button
-                                            type="button"
-                                            onClick={() => void executeHostAction("start")}
-                                            disabled={startDisabled}
-                                            className="h-10 w-full cursor-pointer rounded-xl bg-linear-to-r from-blue-50 via-cyan-50 to-white px-4 py-2 text-sm font-semibold text-blue-900 shadow-[0px_2px_0px_0px_var(--color-slate-50)_inset,0px_0.5px_1px_0px_var(--color-blue-300)] transition-all duration-150 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
-                                        >
-                                            Iniciar entrevista
-                                        </button>
-                                    </NoiseBackground>
-
-                                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                                        <NoiseBackground
-                                            containerClassName="w-full rounded-xl"
-                                            gradientColors={[
-                                                "rgb(14, 116, 244)",
-                                                "rgb(37, 99, 235)",
-                                                "rgb(6, 182, 212)",
-                                            ]}
-                                        >
-                                            <button
-                                                type="button"
-                                                onClick={() => void executeHostAction("next")}
-                                                disabled={nextDisabled}
-                                                className="h-9 w-full cursor-pointer rounded-xl bg-linear-to-r from-blue-50 via-cyan-50 to-white px-3 py-2 text-sm font-semibold text-blue-900 shadow-[0px_2px_0px_0px_var(--color-slate-50)_inset,0px_0.5px_1px_0px_var(--color-blue-300)] transition-all duration-150 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
-                                            >
-                                                Siguiente ronda
-                                            </button>
-                                        </NoiseBackground>
-
-                                        <NoiseBackground
-                                            containerClassName="w-full rounded-xl"
-                                            gradientColors={[
-                                                "rgb(239, 68, 68)",
-                                                "rgb(248, 113, 113)",
-                                                "rgb(252, 165, 165)",
-                                            ]}
-                                        >
-                                            <button
-                                                type="button"
-                                                onClick={() => void executeHostAction("close")}
-                                                disabled={closeDisabled}
-                                                className="h-9 w-full cursor-pointer rounded-xl bg-linear-to-r from-red-50 via-red-50 to-rose-50 px-3 py-2 text-sm font-semibold text-red-900 shadow-[0px_2px_0px_0px_var(--color-red-50)_inset,0px_0.5px_1px_0px_var(--color-red-300)] transition-all duration-150 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
-                                            >
-                                                Finalizar entrevista
-                                            </button>
-                                        </NoiseBackground>
-                                    </div>
-                                </div>
-                            ) : (
-                                <p className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                                    Los controles de ronda están disponibles solo para el host conectado.
-                                </p>
-                            )}
-                        </aside>
-
-                        <div className="xl:col-span-8">
-                            <AudioPlayer question={activeQuestion} authToken={accessToken} ttsStatus={ttsStatus} />
-                        </div>
-                    </section>
+                    <InterviewRoomSessionPanel
+                        sessionStatus={sessionStatus}
+                        activeRoundIndex={activeRoundIndex}
+                        totalRounds={totalRounds}
+                        activeRoundId={activeRoundId}
+                        isJoined={isJoined}
+                        isHost={isHost}
+                        startDisabled={startDisabled}
+                        nextDisabled={nextDisabled}
+                        closeDisabled={closeDisabled}
+                        onHostAction={(action) => void executeHostAction(action)}
+                        activeQuestion={activeQuestion}
+                        accessToken={accessToken}
+                        ttsStatus={ttsStatus}
+                    />
 
                     {activeRoundId && (
-                        <section className="grid grid-cols-1 gap-4">
-                            <article className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
-                                <div className="mb-3 flex items-center gap-2 text-rose-800">
-                                    <AudioLines className="h-4 w-4" />
-                                    <h2 className="text-sm font-semibold uppercase tracking-wide">
-                                        Ronda {(activeRoundIndex ?? 0) + 1} — Tu respuesta
-                                    </h2>
-                                </div>
-                                {currentQuestion && (
-                                    <p className="mb-4 text-sm text-rose-700">{currentQuestion.text}</p>
-                                )}
-                                {recordingCountdown !== null && !isRecording && (
-                                    <p className="mb-2 text-sm font-medium text-rose-600">
-                                        Grabación automática en {recordingCountdown}s…
-                                    </p>
-                                )}
-                                {isRecording && (
-                                    <div className="flex items-center gap-2 mb-3">
-                                        <span className="inline-block h-2.5 w-2.5 rounded-full bg-rose-500 animate-pulse" />
-                                        <p className="text-sm font-medium text-rose-700">Grabando tu respuesta…</p>
-                                    </div>
-                                )}
-                                {isSubmitting && (
-                                    <p className="mt-3 text-sm text-rose-600">Enviando audio…</p>
-                                )}
-                                {isEvaluating && !isSubmitting && (
-                                    <p className="mt-3 text-sm text-rose-600">Evaluando respuesta…</p>
-                                )}
-                                {submissionError && (
-                                    <p className="mt-3 text-sm font-medium text-red-600">Error: {submissionError}</p>
-                                )}
-                                {transcription && (
-                                    <div className="mt-3 rounded-xl border border-rose-200 bg-white p-3">
-                                        <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">Tu respuesta</p>
-                                        <p className="mt-0.5 text-sm text-rose-800 italic">"{transcription}"</p>
-                                    </div>
-                                )}
-                                {evaluationResult && (
-                                    <div className="mt-2 rounded-xl border border-rose-300 bg-white p-3 space-y-2">
-                                        <p className="text-sm font-semibold text-rose-800">
-                                            Puntuación: {evaluationResult.score ?? "—"}
-                                        </p>
-                                        {evaluationResult.feedback && (
-                                            <p className="text-sm text-rose-700">{evaluationResult.feedback}</p>
-                                        )}
-                                    </div>
-                                )}
-                            </article>
-                        </section>
+                        <InterviewRoomAnswerPanel
+                            activeRoundIndex={activeRoundIndex}
+                            currentQuestion={currentQuestion}
+                            recordingCountdown={recordingCountdown}
+                            isRecording={isRecording}
+                            isSubmitting={isSubmitting}
+                            isEvaluating={isEvaluating}
+                            submissionError={submissionError}
+                            transcription={transcription}
+                            evaluationResult={evaluationResult}
+                        />
                     )}
 
-                    <section className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-                        <article className="rounded-2xl border border-cyan-200 bg-cyan-50 p-4 xl:col-span-1">
-                            <div className="mb-3 flex items-center gap-2 text-cyan-800">
-                                <UserRound className="h-4 w-4" />
-                                <h2 className="text-sm font-semibold uppercase tracking-wide">Tu canal</h2>
-                            </div>
-                            <p className="text-base font-semibold text-cyan-900">{localName}</p>
-                            <p className="mt-2 text-sm text-cyan-700">
-                                {isMuted ? "Microfono silenciado" : "Microfono activo"}
-                            </p>
-                            <progress
-                                className="mt-4 h-2 w-full overflow-hidden rounded-full appearance-none [&::-webkit-progress-bar]:rounded-full [&::-webkit-progress-bar]:bg-cyan-100 [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-cyan-600 [&::-moz-progress-bar]:rounded-full [&::-moz-progress-bar]:bg-cyan-600"
-                                max={100}
-                                value={Math.min(100, Math.round(localLevel * 500))}
-                                aria-label="Nivel de audio local"
-                            />
-                            <p className="mt-2 text-xs text-cyan-700">Nivel de audio local</p>
-                            <p className="mt-2 text-xs text-cyan-600">User ID: {selfId || "--"}</p>
-                        </article>
-
-                        <div className="xl:col-span-2">
-                            <div className="mb-3 flex items-center justify-between">
-                                <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">
-                                    Audio remoto en sala
-                                </h2>
-                                <span className="text-xs text-slate-500">Room: {roomId || "--"}</span>
-                            </div>
-
-                            {participants.length === 0 ? (
-                                <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
-                                    No hay participantes remotos aun. Comparte el Session Code y espera a que ingresen.
-                                </div>
-                            ) : (
-                                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                                    {participants.map((participant) => {
-                                        const levelWidth = Math.min(100, Math.round(participant.level * 500));
-                                        const isSpeaking = levelWidth > 8;
-
-                                        return (
-                                            <article
-                                                key={participant.socketId}
-                                                className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
-                                            >
-                                                <div className="flex items-start justify-between gap-3">
-                                                    <div>
-                                                        <p className="text-sm font-semibold text-slate-900">{participant.displayName}</p>
-                                                        <p className="text-xs text-slate-500">{participant.socketId}</p>
-                                                    </div>
-                                                    <span
-                                                        className={`rounded-full px-2 py-1 text-[11px] font-medium ${
-                                                            participant.connected
-                                                                ? "bg-emerald-100 text-emerald-700"
-                                                                : "bg-slate-100 text-slate-500"
-                                                        }`}
-                                                    >
-                                                        {participant.connected ? "Activo" : "Conectando"}
-                                                    </span>
-                                                </div>
-
-                                                <progress
-                                                    className={`mt-4 h-2 w-full overflow-hidden rounded-full appearance-none [&::-webkit-progress-bar]:rounded-full [&::-webkit-progress-bar]:bg-slate-100 [&::-webkit-progress-value]:rounded-full [&::-moz-progress-bar]:rounded-full ${
-                                                        isSpeaking
-                                                            ? "[&::-webkit-progress-value]:bg-emerald-500 [&::-moz-progress-bar]:bg-emerald-500"
-                                                            : "[&::-webkit-progress-value]:bg-cyan-500 [&::-moz-progress-bar]:bg-cyan-500"
-                                                    }`}
-                                                    max={100}
-                                                    value={levelWidth}
-                                                    aria-label={`Nivel de audio de ${participant.displayName}`}
-                                                />
-                                                <p className="mt-2 text-xs text-slate-500">
-                                                    {isSpeaking ? "Transmitiendo audio ahora" : "Audio estable"}
-                                                </p>
-                                            </article>
-                                        );
-                                    })}
-                                </div>
-                            )}
-                        </div>
-                    </section>
+                    <InterviewRoomParticipants
+                        localName={localName}
+                        isMuted={isMuted}
+                        localLevel={localLevel}
+                        selfId={selfId}
+                        participants={participants}
+                        roomId={roomId}
+                    />
                 </main>
             </div>
         </>

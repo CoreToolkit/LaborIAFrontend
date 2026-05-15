@@ -1,4 +1,5 @@
 import { EmployabilityScoreResponse, TimelineSummary, UserMetricsResponse } from "@/types/metrics";
+import { BACKEND_URL } from "@/config/api";
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
@@ -154,7 +155,7 @@ export const getUserMetrics = async (token: string): Promise<UserMetricsResponse
 export const getEmployabilityScore = async (
   token: string
 ): Promise<EmployabilityScoreResponse> => {
-  const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/metrics/employability`, {
+  const response = await fetch(`${BACKEND_URL}/api/metrics/employability`, {
     method: "GET",
     headers: {
       Authorization: `Bearer ${token}`,

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { clearTokens, getAccessToken } from "@/utils/session";
+import { BACKEND_URL } from "@/config/api";
 
 export interface UserProfile {
   id: string;
@@ -82,7 +83,7 @@ export function useUserProfile(): UseUserProfileResult {
     setIsLoading(true);
     setError(null);
 
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+    const backendUrl = BACKEND_URL;
     const token = getAccessToken();
 
     if (!backendUrl) {

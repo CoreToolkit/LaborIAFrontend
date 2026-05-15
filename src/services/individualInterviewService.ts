@@ -6,7 +6,7 @@ import type {
   IndividualEvaluationResult,
 } from "@/types/individualInterview";
 
-const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL ?? "";
+import { BACKEND_URL as BACKEND } from "@/config/api";
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null;

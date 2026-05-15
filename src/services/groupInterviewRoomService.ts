@@ -123,6 +123,26 @@ export const ensureSessionCodeFromApi = async ({
   return created.session_code;
 };
 
+export const executeGroupSessionActionApi = async (
+  backendHttpOrigin: string,
+  headers: HeadersInit,
+  sessionCode: string,
+  action: GroupInterviewAction,
+): Promise<Response> => {
+  const encoded = encodeURIComponent(sessionCode);
+  const endpoints: Record<GroupInterviewAction, string> = {
+    start: `${backendHttpOrigin}/api/group-sessions/${encoded}/start`,
+    next: `${backendHttpOrigin}/api/group-sessions/${encoded}/rounds/next`,
+    close: `${backendHttpOrigin}/api/group-sessions/${encoded}/close`,
+  };
+
+  return fetch(endpoints[action], {
+    method: "POST",
+    headers,
+    body: action === "next" ? JSON.stringify({}) : undefined,
+  });
+};
+
 export const mapGroupInterviewActionError = (
   action: GroupInterviewAction,
   httpStatus: number,

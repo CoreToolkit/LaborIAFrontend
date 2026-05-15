@@ -3,8 +3,7 @@ import {
   RefreshImprovementPlanResponse,
   ImprovementPlanHistoryEntry,
 } from "@/types/improvementPlan";
-
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "";
+import { BACKEND_URL } from "@/config/api";
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null;

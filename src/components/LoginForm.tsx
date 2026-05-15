@@ -2,15 +2,15 @@ import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Clock } from 'lucide-react';
 import { Provider, setProvider, clearProvider } from '@/utils/session';
+import { BACKEND_URL } from '@/config/api';
 
 export const LoginForm = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
-  const backendUrlFromEnv = process.env.NEXT_PUBLIC_BACKEND_URL;
   const apiUrlFromEnv = process.env.NEXT_PUBLIC_API_URL;
 
   const resolvedBackendUrl = (() => {
-    if (backendUrlFromEnv) return backendUrlFromEnv.replace(/\/+$/, '');
+    if (BACKEND_URL) return BACKEND_URL.replace(/\/+$/, '');
 
     if (!apiUrlFromEnv) return null;
 

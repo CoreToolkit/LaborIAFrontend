@@ -1,4 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from "next";
+import { getBackendUrl } from "@/config/api";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {
@@ -6,8 +7,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ message: "Method Not Allowed" });
   }
 
-  const backendUrl =
-    process.env.NEXT_PUBLIC_BACKEND_URL || process.env.BACKEND_URL;
+  const backendUrl = getBackendUrl();
 
   if (!backendUrl) {
     return res

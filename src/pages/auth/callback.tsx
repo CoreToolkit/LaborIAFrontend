@@ -7,6 +7,7 @@ import {
   saveTokens,
   clearTokens,
 } from "@/utils/session";
+import { exchangeOAuthCode } from "@/services/authService";
 
 export default function Callback() {
   const router = useRouter();
@@ -19,7 +20,6 @@ export default function Callback() {
     const oauthError = router.query.error as string | undefined;
     const provider = getProvider();
     const existingToken = getAccessToken();
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
 
     const cleanup = (removeTokens = false) => {
       clearProvider();
@@ -60,39 +60,10 @@ export default function Callback() {
       return;
     }
 
-    if (!backendUrl) {
-      console.error("NEXT_PUBLIC_BACKEND_URL no está definida.");
-      cleanup(true);
-      return;
-    }
-
-    const exchangeUrl = `${backendUrl}/auth/${provider}/exchange`;
-
-    fetch(exchangeUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        code,
-        state,
-      }),
-    })
-      .then((res) => {
-        if (!res.ok) {
-          throw new Error(`HTTP error! status: ${res.status}`);
-        }
-        return res.json();
-      })
+    exchangeOAuthCode(provider, code, state)
       .then((data) => {
-        if (!data?.access_token || !data?.refresh_token) {
-          throw new Error("La respuesta no contiene tokens.");
-        }
-
         saveTokens(data.access_token, data.refresh_token);
         cleanup(false);
-
-        // Use replace so callback is not kept in browser history.
         router.replace("/dashboard");
       })
       .catch((error) => {
