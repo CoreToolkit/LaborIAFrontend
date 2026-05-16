@@ -44,8 +44,10 @@ import {
     wrapChunkWithClientHeader,
 } from "@/utils/interviewRoom";
 
-const BACKEND_WS_BASE = process.env.NEXT_PUBLIC_BACKEND_WS_BASE;
-const BACKEND_API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL;
+import { API_CONFIG } from "@/config/api";
+
+const BACKEND_WS_BASE = API_CONFIG.backendWsBase;
+const BACKEND_API_BASE = API_CONFIG.backendUrl;
 
 type SignalingMessage = {
     event: string;

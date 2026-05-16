@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState } from "react";
 import {
   LineChart,
   Line,
@@ -8,9 +8,8 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { getTimelineSummary } from "@/services/metricsService";
 import { TimelineSummary } from "@/types/metrics";
-import { getAccessToken } from "@/utils/session";
+import { useTimelineSummary } from "@/hooks/useTimelineSummary";
 
 type Granularity = "week" | "month";
 
@@ -71,12 +70,7 @@ function EmptyState() {
   return (
     <div className="flex flex-col items-center justify-center py-12 text-center">
       <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center mb-3">
-        <svg
-          className="w-6 h-6 text-blue-400"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-        >
+        <svg className="w-6 h-6 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -95,40 +89,9 @@ function EmptyState() {
 
 export function TimelineChart() {
   const [granularity, setGranularity] = useState<Granularity>("week");
-  const [data, setData] = useState<TimelineSummary | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async (g: Granularity, signal: AbortSignal) => {
-    const token = getAccessToken();
-    if (!token) {
-      setError("Sesión expirada. Inicia sesión nuevamente.");
-      setIsLoading(false);
-      return;
-    }
-    setIsLoading(true);
-    setError(null);
-    try {
-      const result = await getTimelineSummary(token, g, signal);
-      setData(result);
-    } catch (err) {
-      if (err instanceof Error && err.name === "AbortError") return;
-      setError(
-        err instanceof Error ? err.message : "No se pudo cargar el historial."
-      );
-    } finally {
-      if (!signal.aborted) setIsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void load(granularity, controller.signal);
-    return () => controller.abort();
-  }, [load, granularity]);
+  const { data, isLoading, error } = useTimelineSummary(granularity);
 
   const isEmpty = !data || data.points.length === 0;
-
   const chartData =
     data?.points.map((p) => ({
       ...p,
@@ -139,19 +102,12 @@ export function TimelineChart() {
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
       <div className="flex items-start justify-between mb-4">
         <div>
-          <h3 className="text-sm font-semibold text-slate-800">
-            Evolución temporal
-          </h3>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Promedio de score por período
-          </p>
+          <h3 className="text-sm font-semibold text-slate-800">Evolución temporal</h3>
+          <p className="text-xs text-slate-400 mt-0.5">Promedio de score por período</p>
         </div>
         <div className="flex items-center gap-2">
           {data && !isEmpty && (
-            <TrendBadge
-              direction={data.trend_direction}
-              percentage={data.trend_percentage}
-            />
+            <TrendBadge direction={data.trend_direction} percentage={data.trend_percentage} />
           )}
           <div className="flex rounded-lg border border-slate-200 overflow-hidden">
             {(["week", "month"] as Granularity[]).map((g) => (
@@ -188,10 +144,7 @@ export function TimelineChart() {
 
       {!isLoading && !error && !isEmpty && (
         <ResponsiveContainer width="100%" height={220}>
-          <LineChart
-            data={chartData}
-            margin={{ top: 4, right: 8, left: -20, bottom: 0 }}
-          >
+          <LineChart data={chartData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
             <XAxis
               dataKey="label"

@@ -1,7 +1,9 @@
 import React from 'react';
 import { Search, Bell, Menu } from 'lucide-react';
-import { useProfile } from '@/hooks/useProfile';
 import Image from 'next/image';
+import { useProfile } from '@/hooks/useProfile';
+import { useNotifications } from '@/hooks/useNotifications';
+import { NotificationsPanel } from './NotificationsPanel';
 
 interface TopbarProps {
   onMenuClick?: () => void;
@@ -17,6 +19,11 @@ export function Topbar({ onMenuClick }: TopbarProps) {
   const userPhoto = profile?.fotoPerfil;
   const userInitial = userName.trim().charAt(0).toUpperCase() || 'U';
 
+  const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications(profile ?? null);
+  const [isPanelOpen, setIsPanelOpen] = React.useState(false);
+
+  const togglePanel = () => setIsPanelOpen((prev) => !prev);
+
   return (
     <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between border-b border-slate-200 bg-white px-4 sm:px-6 lg:px-8 shadow-sm">
       {/* Left side - Menu & Logo for mobile */}
@@ -30,7 +37,7 @@ export function Topbar({ onMenuClick }: TopbarProps) {
         >
           <Menu className="h-6 w-6" />
         </button>
-        
+
         {/* Mobile logo */}
         <div className="flex lg:hidden items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white font-bold text-sm">
@@ -63,15 +70,29 @@ export function Topbar({ onMenuClick }: TopbarProps) {
       {/* Right side - Actions */}
       <div className="flex items-center gap-4">
         {/* Notifications */}
-        <button
-          type="button"
-          aria-label="Notificaciones"
-          title="Notificaciones"
-          className="relative rounded-full p-1.5 text-slate-400 hover:text-slate-500 hover:bg-slate-100 transition-colors"
-        >
-          <span className="absolute right-1 top-1 flex h-2 w-2 items-center justify-center rounded-full bg-blue-600 ring-2 ring-white" />
-          <Bell className="h-5 w-5" />
-        </button>
+        <div className="relative">
+          <button
+            type="button"
+            aria-label="Notificaciones"
+            title="Notificaciones"
+            onClick={togglePanel}
+            className="relative rounded-full p-1.5 text-slate-400 hover:text-slate-500 hover:bg-slate-100 transition-colors"
+          >
+            {unreadCount > 0 && (
+              <span className="absolute right-1 top-1 flex h-2 w-2 items-center justify-center rounded-full bg-blue-600 ring-2 ring-white" />
+            )}
+            <Bell className="h-5 w-5" />
+          </button>
+
+          {isPanelOpen && (
+            <NotificationsPanel
+              notifications={notifications}
+              onMarkAsRead={markAsRead}
+              onMarkAllAsRead={markAllAsRead}
+              onClose={() => setIsPanelOpen(false)}
+            />
+          )}
+        </div>
 
         {/* User profile */}
         <div className="flex items-center gap-3 border-l border-slate-200 pl-4">
