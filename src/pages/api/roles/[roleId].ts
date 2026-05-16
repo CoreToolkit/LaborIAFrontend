@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 
-const getBackendUrl = () => process.env.NEXT_PUBLIC_BACKEND_URL || process.env.BACKEND_URL;
+import { getServerBackendUrl as getBackendUrl } from "@/config/api";
 
 const toJsonPayload = async (backendResponse: Response): Promise<Record<string, unknown> | unknown[]> => {
   const text = await backendResponse.text();

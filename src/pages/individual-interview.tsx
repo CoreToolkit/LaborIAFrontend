@@ -1,7 +1,7 @@
 import React from "react";
 import Head from "next/head";
 import { useRouter } from "next/router";
-import { Waves, Volume2, Mic, MicOff, LogOut } from "lucide-react";
+import { Waves, Volume2, Mic, MicOff, LogOut, LayoutDashboard } from "lucide-react";
 import PrivateRoute from "@/components/PrivateRoute";
 import BlurText from "@/components/BlurText";
 import { Button } from "@/components/ui/button";
@@ -174,10 +174,17 @@ function IndividualInterviewContent() {
                 </span>
               )}
             </div>
-            <Button variant="outline" size="sm" onClick={handleEndInterview} className="gap-2">
-              <LogOut className="h-4 w-4" />
-              Terminar entrevista
-            </Button>
+            {step === "idle" || step === "initializing" ? (
+              <Button variant="outline" size="sm" onClick={() => void router.push("/dashboard")} className="gap-2">
+                <LayoutDashboard className="h-4 w-4" />
+                Volver al dashboard
+              </Button>
+            ) : (
+              <Button variant="outline" size="sm" onClick={handleEndInterview} className="gap-2">
+                <LogOut className="h-4 w-4" />
+                Terminar entrevista
+              </Button>
+            )}
           </div>
         </header>
 
