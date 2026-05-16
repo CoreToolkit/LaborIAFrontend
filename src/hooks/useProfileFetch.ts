@@ -15,6 +15,7 @@ import {
 import { extractApiError, fetchFromProfileApi, upsertProfile } from "@/utils/profileApiClient";
 import { UNAUTHENTICATED_ERROR } from "@/utils/profileAuth";
 import { clearTokens, getAccessToken } from "@/utils/session";
+import { isBackendConfigured } from "@/config/api";
 
 export function useProfileFetch() {
   const router = useRouter();
@@ -36,7 +37,7 @@ export function useProfileFetch() {
     setIsLoading(true);
     setError(null);
 
-    if (!process.env.NEXT_PUBLIC_BACKEND_URL) {
+    if (!isBackendConfigured()) {
       setError("Configuración incompleta. Falta la URL del backend.");
       setIsLoading(false);
       return;
@@ -139,7 +140,7 @@ export function useProfileFetch() {
   // ─── Update profile ──────────────────────────────────────────────────────────
 
   const updateProfile = async (data: Partial<PerfilCompleto>) => {
-    if (!process.env.NEXT_PUBLIC_BACKEND_URL || typeof window === "undefined") return;
+    if (!isBackendConfigured() || typeof window === "undefined") return;
 
     const token = getAccessToken();
     if (!token) { handleUnauthenticated(); return; }
